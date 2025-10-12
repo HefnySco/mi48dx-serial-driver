@@ -20,8 +20,8 @@ private:
     static constexpr uint16_t GET_SINGLE_FRAME = 0x01;
     static constexpr uint16_t CONTINUOUS_STREAM = 0x02;
     static constexpr double KELVIN_0 = -273.15;
-    static constexpr uint16_t DEFAULT_ROWS = 80;
-    static constexpr uint16_t DEFAULT_COLS = 62;
+    static constexpr uint16_t DEFAULT_ROWS = 62;
+    static constexpr uint16_t DEFAULT_COLS = 80;
 
     // MI48 Register Map
     static const std::map<std::string, uint8_t> MI48_REGMAP;

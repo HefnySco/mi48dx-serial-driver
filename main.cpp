@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
         sender.get_senxor_type(camera_type);
     }
 
-    sender.start_stream(false);
+    sender.start_stream(true);
     sender.loop_on_read();
     // Port is closed automatically by destructor
     return 0;
