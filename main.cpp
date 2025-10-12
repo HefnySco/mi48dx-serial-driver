@@ -1,8 +1,16 @@
 #include "serial_mi48.hpp"
+#include <string>
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string port_path = "/dev/ttyACM0"; // Default port
+    if (argc > 1) {
+        port_path = argv[1]; // Use provided port path
+    } else {
+        std::cout << "No port path provided, using default: " << port_path << "\n";
+    }
+
     SerialCommandSender sender;
-    if (sender.open_port()) {
+    if (sender.open_port(port_path)) {
         sender.stop_stream();
         sender.send_and_receive_serial_command();
         int camera_type;

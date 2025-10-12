@@ -52,7 +52,7 @@ public:
     SerialCommandSender();
     ~SerialCommandSender();
 
-    bool open_port();
+    bool open_port(const std::string& port_path);
     void close_port();
     void send_and_receive_serial_command();
     void loop_on_read();
@@ -109,10 +109,12 @@ inline const std::map<std::string, uint8_t> SerialCommandSender::MI48_REGMAP = {
     {"SENXOR_ID_4", 0xE4}, {"SENXOR_ID_5", 0xE5}
 };
 
+// Camera types & correspondant resolutions.
 inline const std::map<uint8_t, SerialCommandSender::Resolution> SerialCommandSender::FPA_SHAPE = {
     {0, {80, 62}}, {1, {80, 62}}, {2, {32, 32}}, {3, {80, 62}}, {4, {80, 62}}, {8, {160, 120}}
 };
 
+// Command initialization sequence.
 inline const std::vector<SerialCommandSender::Command> SerialCommandSender::COMMAND_LIST = {
     {"EVK_ID", false, 0}, {"FRAME_RATE", true, 2}, {"FW_VERSION_1", false, 0},
     {"FW_VERSION_2", false, 0}, {"SENXOR_POWERUP", false, 0}

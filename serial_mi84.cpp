@@ -15,24 +15,21 @@ SerialCommandSender::~SerialCommandSender()
 }
 
 // Implementation of methods (unchanged from previous version)
-bool SerialCommandSender::open_port()
-{
-    std::cout << "Attempting to connect to port: " << PORT_NAME << " at " << BAUD_RATE << " baud...\n";
+bool SerialCommandSender::open_port(const std::string& port_path) {
+    std::cout << "Attempting to connect to port: " << port_path << " at " << BAUD_RATE << " baud...\n";
 
-    enum sp_return result = sp_get_port_by_name(PORT_NAME, &port);
-    if (result != SP_OK)
-    {
+    enum sp_return result = sp_get_port_by_name(port_path.c_str(), &port);
+    if (result != SP_OK) {
         std::cerr << "\n--- ERROR ---\n";
-        std::cerr << "Could not find serial port " << PORT_NAME << ".\n";
+        std::cerr << "Could not find serial port " << port_path << ".\n";
         list_available_ports();
         return false;
     }
 
     result = sp_open(port, SP_MODE_READ_WRITE);
-    if (result != SP_OK)
-    {
+    if (result != SP_OK) {
         std::cerr << "\n--- ERROR ---\n";
-        std::cerr << "Could not open serial port " << PORT_NAME << ".\n";
+        std::cerr << "Could not open serial port " << port_path << ".\n";
         std::cerr << "Make sure the device is connected and you have permission.\n";
         std::cerr << "Details: " << sp_last_error_message() << "\n";
         sp_free_port(port);
@@ -47,7 +44,7 @@ bool SerialCommandSender::open_port()
     sp_set_stopbits(port, 1);
     sp_set_dtr(port, SP_DTR_ON);
     sp_set_rts(port, SP_RTS_ON);
-
+    
     std::cout << "Successfully opened port.\n";
     std::cout << "Pausing for 2 seconds to allow device initialization...\n";
     usleep(2000000);
