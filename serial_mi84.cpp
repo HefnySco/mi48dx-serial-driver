@@ -12,7 +12,7 @@
 #include <iomanip>
 // Assuming these are defined elsewhere
 #define TIMEOUT_MILLISECONDS 1000
-#define COMMAND_DELAY_MS 100
+#define COMMAND_DELAY_MS 10
 #define KELVIN_0 -273.15
 
 // Constructor and destructor
@@ -21,6 +21,15 @@ SerialCommandSender::SerialCommandSender() : port(nullptr), m_resolution(DEFAULT
 SerialCommandSender::~SerialCommandSender()
 {
     close_port();
+}
+
+/**
+ * @brief Registers a callback function to be called when a new frame is received.
+ * @param callback The function to be called. It must match the FrameCallback signature.
+ */
+void SerialCommandSender::register_frame_callback(FrameCallback callback)
+{
+    m_frame_callback = std::move(callback);
 }
 
 // Implementation of methods (unchanged from previous version)
@@ -261,6 +270,7 @@ void SerialCommandSender::send_and_receive_serial_command()
             bool success = send_command(COMMAND_LIST[i], response_value);
             if (success && response_value != UINT8_MAX)
             {
+                usleep(100000);
                 received_data = true;
             }
         }
@@ -277,155 +287,6 @@ void SerialCommandSender::send_and_receive_serial_command()
 }
 
 /**
- * @brief Loops reading raw serial data until no data is received, displaying frames as colored ASCII art on a fixed screen.
- */
-
-// void SerialCommandSender::loop_on_read() {
-//     if (!port) {
-//         std::cerr << "\n--- ERROR ---\n";
-//         std::cerr << "Serial port is not open. Call open_port() first.\n";
-//         return;
-//     }
-
-//     const uint16_t rows = m_resolution.first;
-//     const uint16_t cols = m_resolution.second;
-//     size_t expected_data_size = (size_t)rows * cols * sizeof(int16_t);
-//     constexpr size_t MAX_BUFFER_SIZE = 19201;
-
-//     // Define 5 grayscale levels using ASCII characters
-//     const char grayscale_levels[5] = {' ', '.', ':', '#', '@'};
-
-//     try {
-//         bool received_data = true;
-//         while (received_data) {
-//             received_data = false;
-//             char buffer[MAX_BUFFER_SIZE];
-//             std::string response_string_raw = "";
-//             long start_time = clock();
-
-//             // Read data until full frame or timeout
-//             while ((clock() - start_time) * 1000 / CLOCKS_PER_SEC < TIMEOUT_MILLISECONDS) {
-//                 int current_read = sp_nonblocking_read(port, buffer, sizeof(buffer) - 1);
-//                 if (current_read > 0) {
-//                     response_string_raw.append(buffer, current_read);
-//                     received_data = true;
-//                     if (response_string_raw.size() >= expected_data_size + 9) { // Minimum size for #xxxxGFRA + data
-//                         break;
-//                     }
-//                 }
-//                 usleep(10000);
-//             }
-
-//             // Clear screen and move cursor to top-left
-//             std::cout << "\033[2J\033[H";
-
-//             // Data Processing
-//             if (received_data && response_string_raw.size() >= expected_data_size + 9) {
-//                 const char *data_ptr = response_string_raw.data();
-//                 const size_t total_pixels = rows * cols;
-//                 size_t start_index = 0;
-//                 size_t header_size = 0;
-
-//                 // Search for #xxxxGFRA
-//                 bool found = false;
-//                 for (size_t i = 0; i <= response_string_raw.size() - 9; ++i) {
-//                     if (response_string_raw[i] == '#' &&
-//                         isxdigit(response_string_raw[i+1]) && isxdigit(response_string_raw[i+2]) &&
-//                         isxdigit(response_string_raw[i+3]) && isxdigit(response_string_raw[i+4]) &&
-//                         response_string_raw.substr(i+5, 4) == "GFRA") {
-//                         std::cout << "#xxxxGFRA found at index: " << i << " (xxxx = "
-//                                   << response_string_raw.substr(i+1, 4) << ")\n";
-//                         header_size = i + 9; // Header ends after #xxxxGFRA
-//                         start_index = header_size; // Frame data starts immediately after
-//                         found = true;
-//                         break;
-//                     }
-//                 }
-
-//                 if (!found) {
-//                     header_size = response_string_raw.size() - expected_data_size; // Fallback
-//                     start_index = header_size;
-//                     std::cout << "header_size:" << header_size << "\n";
-//                 }
-
-//                 // Check if enough data remains after start_index
-//                 if (start_index + expected_data_size > response_string_raw.size()) {
-//                     std::cout << "TIMEOUT: Insufficient data after header (" << expected_data_size
-//                               << " bytes needed, " << (response_string_raw.size() - start_index)
-//                               << " bytes available)\n";
-//                     continue;
-//                 }
-
-//                 std::vector<double> temperatures(total_pixels);
-
-//                 // Convert int16_t values to Kelvin
-//                 for (size_t i = 0; i < total_pixels; ++i) {
-//                     size_t byte_index = start_index + (i * 2);
-//                     if (byte_index + 1 >= response_string_raw.size()) {
-//                         std::cerr << "❌ ERROR: Insufficient data for pixel " << i << " at byte " << byte_index << "\n";
-//                         break;
-//                     }
-//                     int16_t raw_data_val = (int16_t)(((uint8_t)data_ptr[byte_index + 1] << 8) | (uint8_t)data_ptr[byte_index]);
-//                     const double temp_celsius = (double)raw_data_val / 10.0;
-//                     temperatures[i] = temp_celsius + KELVIN_0;
-//                 }
-
-//                 // Display frame metadata
-//                 std::cout << "Thermal Frame: " << rows << "x" << cols << " (" << response_string_raw.size() << " bytes)\n";
-//                 std::cout << "Header Size: " << header_size << " bytes\n";
-//                 std::cout << "Total Pixels: " << total_pixels << "\n";
-
-//                 // Calculate statistics
-//                 if (total_pixels > 0 && temperatures.size() == total_pixels) {
-//                     auto min_it = std::min_element(temperatures.begin(), temperatures.end());
-//                     auto max_it = std::max_element(temperatures.begin(), temperatures.end());
-//                     double sum = std::accumulate(temperatures.begin(), temperatures.end(), 0.0);
-//                     double avg = sum / total_pixels;
-
-//                     std::cout << "\n--- Frame Statistics (Kelvin) ---\n";
-//                     std::cout << "MAX Temperature: " << *max_it << "\n";
-//                     std::cout << "MIN Temperature: " << *min_it << "\n";
-//                     std::cout << "AVG Temperature: " << avg << "\n";
-
-//                     // Map temperatures to grayscale levels
-//                     double temp_min = *min_it;
-//                     double temp_max = *max_it;
-//                     double temp_range = temp_max - temp_min;
-//                     if (temp_range == 0) temp_range = 1.0; // Avoid division by zero
-
-//                     std::cout << "\n--- Thermal Image (ASCII Grayscale) ---\n";
-//                     for (uint16_t r = 0; r < rows; ++r) {
-//                         for (uint16_t c = 0; c < cols; ++c) {
-//                             size_t index = (size_t)r * cols + c;
-//                             if (index < temperatures.size()) {
-//                                 // Normalize temperature to [0,1]
-//                                 double normalized = (temperatures[index] - temp_min) / temp_range;
-//                                 // Map to 5 levels (0 to 4)
-//                                 int level = static_cast<int>(normalized * 4.999); // 4.999 to ensure proper rounding
-//                                 level = std::max(0, std::min(4, level)); // Clamp to [0,4]
-//                                 std::cout << grayscale_levels[level];
-//                             }
-//                         }
-//                         std::cout << "\n";
-//                     }
-//                 }
-
-//                 response_string_raw.erase(0, header_size + expected_data_size);
-//                 usleep(COMMAND_DELAY_MS * 1000);
-//             } else {
-//                 std::cout << "TIMEOUT: No full frame (" << expected_data_size << " bytes) received after " << TIMEOUT_MILLISECONDS
-//                           << " ms. Received " << response_string_raw.size() << " bytes.\n";
-//             }
-//         }
-//         std::cout << "\nNo data received in the last read cycle, stopping.\n";
-//     } catch (const std::exception& e) {
-//         std::cout << "\033[2J\033[H";
-//         std::cerr << "\n--- COMMUNICATION ERROR ---\n";
-//         std::cerr << "An error occurred during communication: " << e.what() << "\n";
-//     }
-// }
-
-/**
  * @brief Loops reading raw serial data until no data is received, displaying temperatures for 1-in-5 rows and columns.
  */
 void SerialCommandSender::loop_on_read()
@@ -439,7 +300,8 @@ void SerialCommandSender::loop_on_read()
 
     const uint16_t rows = m_resolution.first;
     const uint16_t cols = m_resolution.second;
-    size_t expected_data_size = (size_t)rows * cols * sizeof(int16_t);
+    size_t expected_data_size = (size_t)rows * cols * 2;     // 2 bytes per pixel
+    size_t minimum_size = 9 + (80 * 4) + expected_data_size; // #xxxxGFRA (9 bytes) + 80 words (320 bytes) + frame data
     constexpr size_t MAX_BUFFER_SIZE = 19201;
 
     try
@@ -449,11 +311,11 @@ void SerialCommandSender::loop_on_read()
         {
             received_data = false;
             char buffer[MAX_BUFFER_SIZE];
-            int bytes_read = 0;
-            std::string response_string_raw = "";
+            std::string response_string_raw;
+            response_string_raw.clear(); // Explicitly clear the string
             long start_time = clock();
 
-            // Read data until full frame or timeout
+            // Read data until #xxxxGFRA + 80 words + frame data or timeout
             while ((clock() - start_time) * 1000 / CLOCKS_PER_SEC < TIMEOUT_MILLISECONDS)
             {
                 int current_read = sp_nonblocking_read(port, buffer, sizeof(buffer) - 1);
@@ -461,31 +323,40 @@ void SerialCommandSender::loop_on_read()
                 {
                     response_string_raw.append(buffer, current_read);
                     received_data = true;
-                    if (response_string_raw.size() >= expected_data_size + 9 + 161)
-                    { // Minimum size for #xxxxGFRA + data
+                    // Check if we have #xxxxGFRA and enough data after it
+                    for (size_t i = 0; i <= response_string_raw.size() - 9; ++i)
+                    {
+                        if (response_string_raw[i] == '#' &&
+                            isxdigit(response_string_raw[i + 1]) && isxdigit(response_string_raw[i + 2]) &&
+                            isxdigit(response_string_raw[i + 3]) && isxdigit(response_string_raw[i + 4]) &&
+                            response_string_raw.substr(i + 5, 4) == "GFRA")
+                        {
+                            size_t required_size = i + 9 + (80 * 4) + expected_data_size; // Data from start of #xxxxGFRA
+                            if (response_string_raw.size() >= required_size)
+                            {
+                                minimum_size = required_size; // Update minimum_size to include offset
+                                break;
+                            }
+                        }
+                    }
+                    if (response_string_raw.size() >= minimum_size)
+                    {
                         break;
                     }
-                }
-                else
-                {
-                    std::cout << "NO DATA " << std::endl;
                 }
                 usleep(10000);
             }
 
-            // Clear screen and move cursor to top-left
-            std::cout << "\033[2J\033[H";
-
             // Data Processing
-            if (received_data && response_string_raw.size() >= expected_data_size + 9)
+            if (received_data && response_string_raw.size() >= minimum_size)
             {
                 const char *data_ptr = response_string_raw.data();
                 const size_t total_pixels = rows * cols;
                 size_t start_index = 0;
                 size_t header_size = 0;
-
-                // Search for #xxxxGFRA
                 bool found = false;
+
+                // Find #xxxxGFRA
                 for (size_t i = 0; i <= response_string_raw.size() - 9; ++i)
                 {
                     if (response_string_raw[i] == '#' &&
@@ -493,60 +364,41 @@ void SerialCommandSender::loop_on_read()
                         isxdigit(response_string_raw[i + 3]) && isxdigit(response_string_raw[i + 4]) &&
                         response_string_raw.substr(i + 5, 4) == "GFRA")
                     {
+#ifdef DEBUG_HEADER                        
                         std::cout << "#xxxxGFRA found at index: " << i << " (xxxx = "
                                   << response_string_raw.substr(i + 1, 4) << ")\n";
-                        size_t j = i + 9; // Start after #xxxxGFRA
-                        size_t zero_count = 0;
-                        // Scan for a sequence of at least 10 zeros
-                        while (j < response_string_raw.size() && zero_count < 10)
-                        {
-                            if (response_string_raw[j] == 0)
-                                zero_count++;
-                            else
-                                zero_count = 0; // Reset count if non-zero is found
-                            j++;
-                        }
-                        // Continue until a non-zero character is found
-                        while (j < response_string_raw.size() && response_string_raw[j] == 0)
-                            j++;
-                        if (j < response_string_raw.size())
-                        {
-                            header_size = j; // Header ends at the first non-zero character
-                            start_index = j; // Frame data starts at the first non-zero character
-                            std::cout << "Header ends at index (first non-zero after >=10 zeros): " << header_size << "\n";
-                        }
-                        else
-                        {
-                            std::cerr << "❌ ERROR: No non-zero character found after >=10 zeros\n";
-                            header_size = i + 9; // Fallback to end of #xxxxGFRA
-                            start_index = header_size;
-                        }
+#endif                                  
+                        header_size = i + 9 + (80 * 4); // Header ends after #xxxxGFRA + 80 words
+                        start_index = header_size;      // Frame data starts immediately after
                         found = true;
                         break;
                     }
                 }
+
                 if (!found)
-                    break;
+                {
+                    std::cout << "TIMEOUT: #xxxxGFRA not found in received data\n";
+                    continue;
+                }
 
-                // header_size = response_string_raw.size() - expected_data_size - 4; // Fallback
-                // start_index = header_size;
-                std::cout << "header_size:" << header_size << "\n";
+                std::cout << "Header ends at index: " << header_size << "\n";
 
-                for (size_t i = 0; i < start_index; ++i)
+#ifdef DEBUG_HEADER
+                // Print header bytes in hex
+                for (size_t i = 0; i < header_size && i < response_string_raw.size(); ++i)
                 {
                     std::cout << std::hex << std::setfill('0');
                     std::cout << std::setw(2) << (int)(uint8_t)data_ptr[i] << ",";
                 }
-
                 std::cout << "\n DATA \n";
-
-                for (size_t i = start_index; i < start_index + 450; ++i)
+                // Print first 450 bytes of data in hex
+                for (size_t i = start_index; i < start_index + 450 && i < response_string_raw.size(); ++i)
                 {
                     std::cout << std::hex << std::setfill('0');
                     std::cout << std::setw(2) << (int)(uint8_t)data_ptr[i] << ",";
                 }
-
                 std::cout << "\n ";
+#endif
 
                 // Check if enough data remains after start_index
                 if (start_index + expected_data_size > response_string_raw.size())
@@ -554,13 +406,10 @@ void SerialCommandSender::loop_on_read()
                     std::cout << "TIMEOUT: Insufficient data after header (" << expected_data_size
                               << " bytes needed, " << (response_string_raw.size() - start_index)
                               << " bytes available)\n";
-                    // received_data = false;
                     continue;
                 }
 
                 std::vector<float> temperatures(total_pixels);
-                u_int16_t max_temp = 0;
-                u_int16_t min_temp = UINT16_MAX;
                 // Convert int16_t values to Kelvin
                 for (size_t i = 0; i < total_pixels; ++i)
                 {
@@ -586,53 +435,23 @@ void SerialCommandSender::loop_on_read()
                         // Switch to decimal mode and use a standard fill/width
                         std::cout << std::dec << std::setfill(' ');
                         std::cout << " | Combined Dec: " << std::setw(5) << raw_data_val; // Use a reasonable decimal width
-
                         // Reset formatting
                         std::cout << "-----------------------------------index:" << byte_index;
                         std::cout << "\n";
+                        raw_data_val = temperatures[i - 1];
+                        response_string_raw.clear();
                         break;
                     }
 
-                    if (min_temp > raw_data_val)
-                        min_temp = raw_data_val;
-                    if (max_temp < raw_data_val)
-                        max_temp = raw_data_val;
-                    const float temp_celsius = (float)raw_data_val / 10.0;
-                    temperatures[i] = temp_celsius + KELVIN_0;
+                    const float temp_celsius = ((float)raw_data_val / 10.0) + KELVIN_0;
+                    temperatures[i] = temp_celsius;
                 }
-                std::cout << std::dec << "min_temp: " << min_temp << "  max_temp: " << max_temp << std::endl;
-                // Display frame metadata
-                std::cout << "Thermal Frame: " << rows << "x" << cols << " (" << response_string_raw.size() << " bytes)\n";
-                std::cout << "Header Size: " << header_size << " bytes\n";
-                std::cout << "Total Pixels: " << total_pixels << "\n";
-                // Calculate and display statistics
-                if (total_pixels > 0 && temperatures.size() == total_pixels)
+
+                if ((m_frame_callback) &&
+                    (total_pixels > 0 && temperatures.size() == total_pixels))
                 {
-                    auto min_it = std::min_element(temperatures.begin(), temperatures.end());
-                    auto max_it = std::max_element(temperatures.begin(), temperatures.end());
-                    double sum = std::accumulate(temperatures.begin(), temperatures.end(), 0.0);
-                    double avg = sum / total_pixels;
-
-                    std::cout << "\n--- Frame Statistics (Kelvin) ---\n";
-                    std::cout << "MAX Temperature: " << *max_it << "\n";
-                    std::cout << "MIN Temperature: " << *min_it << "\n";
-                    std::cout << "AVG Temperature: " << avg << "\n";
-
-                    // Display 1-in-5 temperature samples
-                    std::cout << "\n--- 1-in-5 Temperature Sample (K) ---\n";
-                    for (uint16_t r = 0; r < rows; r += 1)
-                    {
-                        std::cout << "Row " << r << ": ";
-                        for (uint16_t c = 0; c < cols; c += 1)
-                        {
-                            size_t index = (size_t)r * cols + c;
-                            if (index < temperatures.size())
-                            {
-                                std::cout << "[" << c << "]=" << temperatures[index] << " ";
-                            }
-                        }
-                        std::cout << "\n";
-                    }
+                    // Invoke the callback with the new frame data
+                    m_frame_callback(temperatures, rows, cols);
                 }
 
                 response_string_raw.erase(0, header_size + expected_data_size);
@@ -640,9 +459,8 @@ void SerialCommandSender::loop_on_read()
             }
             else
             {
-                std::cout << "TIMEOUT: No full frame (" << expected_data_size << " bytes) received after " << TIMEOUT_MILLISECONDS
+                std::cout << "TIMEOUT: No full frame (" << minimum_size << " bytes) received after " << TIMEOUT_MILLISECONDS
                           << " ms. Received " << response_string_raw.size() << " bytes.\n";
-                // received_data = false;
             }
         }
         std::cout << "\nNo data received in the last read cycle, stopping.\n";
@@ -654,6 +472,7 @@ void SerialCommandSender::loop_on_read()
         std::cerr << "An error occurred during communication: " << e.what() << "\n";
     }
 }
+
 
 bool SerialCommandSender::start_stream(bool with_header)
 {
