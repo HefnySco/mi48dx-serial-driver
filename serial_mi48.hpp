@@ -144,6 +144,8 @@ inline const std::vector<SerialCommandSender::Command> SerialCommandSender::COMM
     {"FW_VERSION_1", false, 0},
     {"FW_VERSION_2", false, 0},
     {"FRAME_RATE", true, 5},
+    {"FILTER_CTRL", true, 0},
+    {"SENS_FACTOR", true, 100},
     {"EMISSIVITY", true, 95}};
 
 #endif // SERIAL_COMMAND_SENDER_HPP

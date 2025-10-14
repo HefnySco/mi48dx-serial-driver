@@ -116,8 +116,8 @@ std::string SerialCommandSender::generate_read_command(const std::string &reg_na
         throw std::invalid_argument("Unknown register: " + reg_name);
     }
     uint8_t reg_addr = it->second;
-    char command[18];
-    snprintf(command, sizeof(command), "#000CRREG%02XXXXXXX", reg_addr);
+    char command[19];
+    snprintf(command, sizeof(command), "   #000ARREG%02XXXXX", reg_addr);
     return std::string(command);
 }
 
@@ -129,8 +129,8 @@ std::string SerialCommandSender::generate_write_command(const std::string &reg_n
         throw std::invalid_argument("Unknown register: " + reg_name);
     }
     uint8_t reg_addr = it->second;
-    char command[18];
-    snprintf(command, sizeof(command), "#000CWREG%02X%02XXXXX", reg_addr, value);
+    char command[21];
+    snprintf(command, sizeof(command), "   #000CWREG%02X%02XXXXX", reg_addr, value);
     return std::string(command);
 }
 
@@ -155,7 +155,7 @@ bool SerialCommandSender::send_command(const Command &cmd, int &response_value)
     }
 
     // Read the response (for both read and write commands)
-    std::cout << "Waiting for response (max " << TIMEOUT_MILLISECONDS << " ms)...\n";
+    std::cout << "Waiting for response (max " << TIMEOUT_MILLISECONDS << " ms) << is_write:" << cmd.is_write << "...\n";
 
     char buffer[256]; // Max response size
     int bytes_read = 0;
@@ -172,7 +172,7 @@ bool SerialCommandSender::send_command(const Command &cmd, int &response_value)
             buffer[bytes_read] = '\0'; // Null-terminate
             response_string_raw.append(buffer, bytes_read);
             // For write commands, expect at least 12 bytes (#000ARREGXXYYYY); for read, at least 1 byte
-            if ((cmd.is_write && response_string_raw.size() >= 12) || (!cmd.is_write && response_string_raw.size() >= 1))
+            if ((cmd.is_write && response_string_raw.size() >= 12) || (!cmd.is_write && response_string_raw.size() >= 12))
             {
                 break;
             }
@@ -291,10 +291,18 @@ void SerialCommandSender::send_and_receive_serial_command()
  */
 void SerialCommandSender::loop_on_read()
 {
+#define DEBUG_HEADER 1
     if (!port)
     {
         std::cerr << "\n--- ERROR ---\n";
         std::cerr << "Serial port is not open. Call open_port() first.\n";
+        return;
+    }
+
+    sp_return result = sp_flush(port, SP_BUF_BOTH);
+    if (result != SP_OK)
+    {
+        std::cerr << "Failed to flush serial port: " << sp_last_error_message() << "\n";
         return;
     }
 
@@ -410,7 +418,7 @@ void SerialCommandSender::loop_on_read()
                 }
 
                 std::vector<float> temperatures(total_pixels);
-                // Convert int16_t values to Kelvin
+                // Convert int16_t values to Celsius (little-endian)
                 for (size_t i = 0; i < total_pixels; ++i)
                 {
                     size_t byte_index = start_index + (i * 2);
@@ -453,8 +461,8 @@ void SerialCommandSender::loop_on_read()
                     // Invoke the callback with the new frame data
                     m_frame_callback(temperatures, rows, cols);
                 }
-
-                response_string_raw.erase(0, header_size + expected_data_size);
+                response_string_raw.clear();
+                //response_string_raw.erase(0, header_size + expected_data_size);
                 usleep(COMMAND_DELAY_MS * 1000);
             }
             else
