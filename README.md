@@ -4,8 +4,9 @@
 ## Overview
 This project provides a software framework in C++ for interfacing with the MI48 thermal imaging sensor, processing thermal data, and visualizing it alongside optional visual camera input.
 
+This is a C++ alternative to python [MeridianInnovation PySenxor](https://github.com/HefnySco/pysenxor-lite)
 
-![alt text](https://github.com/HefnySco/mi48dx-serial-driver/blob/master/res/img1.png?raw=true)
+![Sample](https://github.com/HefnySco/mi48dx-serial-driver/blob/master/res/img1.png?raw=true)
 
 
 
