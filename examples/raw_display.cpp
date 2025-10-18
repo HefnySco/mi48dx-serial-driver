@@ -13,7 +13,7 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
     }
 
     const uint16_t total_pixels = rows * cols;
-    const double KELVIN_TO_CELSIUS = -273.15;
+    
 
     // Calculate statistics
     auto min_it = std::min_element(temperatures.begin(), temperatures.end());
@@ -22,9 +22,9 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
     double avg = sum / total_pixels;
 
     // Convert to Celsius
-    double min_temp_c = *min_it + KELVIN_TO_CELSIUS;
-    double max_temp_c = *max_it + KELVIN_TO_CELSIUS;
-    double avg_c = avg + KELVIN_TO_CELSIUS;
+    double min_temp_c = *min_it ;
+    double max_temp_c = *max_it ;
+    double avg_c = avg ;
 
     // Clear console and print statistics
     std::cout << "\033[2J\033[H"; // Clear screen
@@ -41,7 +41,7 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
             size_t index = (size_t)c * rows + r; // Match original column-major order
             if (index < temperatures.size()) {
                 std::cout << "[" << std::setw(2) << c << "]=" 
-                          << std::fixed << std::setprecision(1) << (temperatures[index] + KELVIN_TO_CELSIUS) << " ";
+                          << std::fixed << std::setprecision(1) << (temperatures[index]) << " ";
             }
         }
         std::cout << "\n";
