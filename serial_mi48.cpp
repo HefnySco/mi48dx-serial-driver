@@ -306,6 +306,17 @@ void SerialCommandSender::loop_on_read()
         return;
     }
 
+    //----------------------------------------------------------------------------------------------------------------------
+    // GFRA FORMAT:
+    // 
+    //         |   CMD  |   RESERVED   |  HEADER |     DATA      | CHECKSUM |
+    //  MI08   |  GFRA  |    80 * 2    |  80 * 2 |  80 * 62 * 2  |    4     | data_len: 10240 body_len: 10248(0x2808)
+    //  MI16   |  GFRA  |  3 * 160 * 2 | 160 * 2 | 160 * 120 * 2 |    4     | data_len: 39680 body_len: 39688(0x9B08)
+    //  MI05   |  GFRA  |    50 * 2    |  50 * 2 |  50 * 50 * 2  |    4     | data_len:  5200 body_len: 5208(0x1458)
+    // 
+    //----------------------------------------------------------------------------------------------------------------------
+
+
     const uint16_t rows = m_resolution.first;
     const uint16_t cols = m_resolution.second;
     size_t expected_data_size = (size_t)rows * cols * 2;     // 2 bytes per pixel
@@ -315,10 +326,10 @@ void SerialCommandSender::loop_on_read()
     try
     {
         bool received_data = true;
+        char buffer[MAX_BUFFER_SIZE];
         while (received_data)
         {
             received_data = false;
-            char buffer[MAX_BUFFER_SIZE];
             std::string response_string_raw;
             response_string_raw.clear(); // Explicitly clear the string
             long start_time = clock();
