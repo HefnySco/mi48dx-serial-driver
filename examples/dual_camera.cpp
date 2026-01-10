@@ -32,6 +32,7 @@ struct CalibrationParams {
     double alpha = 0.5;
 };
 
+
 void thermal_frame_handler(const std::vector<float> &temperatures, const uint16_t rows, const uint16_t cols)
 {
     if (temperatures.empty()) {
@@ -205,7 +206,8 @@ void draw_help_overlay(cv::Mat& image)
     }
 }
 
-void save_calibration_config(const std::string& config_file, const CalibrationParams& calib)
+void save_calibration_config(const std::string& config_file, const CalibrationParams& calib, 
+                              const std::string& thermal_port, int video_device)
 {
     std::ofstream out(config_file);
     if (!out.is_open()) {
@@ -213,8 +215,11 @@ void save_calibration_config(const std::string& config_file, const CalibrationPa
         return;
     }
     
-    out << "# Dual Camera Calibration Configuration\n";
+    out << "# Dual Camera Configuration\n";
     out << "# Generated automatically - edit values as needed\n\n";
+    out << "[sources]\n";
+    out << "thermal_port=" << thermal_port << "\n";
+    out << "video_device=" << video_device << "\n\n";
     out << "[calibration]\n";
     out << "scale_x=" << calib.scale_x << "\n";
     out << "scale_y=" << calib.scale_y << "\n";
@@ -224,10 +229,11 @@ void save_calibration_config(const std::string& config_file, const CalibrationPa
     out << "alpha=" << calib.alpha << "\n";
     
     out.close();
-    std::cout << "Calibration saved to: " << config_file << "\n";
+    std::cout << "Configuration saved to: " << config_file << "\n";
 }
 
-bool load_calibration_config(const std::string& config_file, CalibrationParams& calib)
+bool load_calibration_config(const std::string& config_file, CalibrationParams& calib,
+                              std::string& thermal_port, int& video_device)
 {
     std::ifstream in(config_file);
     if (!in.is_open()) {
@@ -246,7 +252,11 @@ bool load_calibration_config(const std::string& config_file, CalibrationParams& 
             std::string key = line.substr(0, pos);
             std::string value = line.substr(pos + 1);
             
-            if (key == "scale_x") calib.scale_x = std::stod(value);
+            // Sources section
+            if (key == "thermal_port") thermal_port = value;
+            else if (key == "video_device") video_device = std::stoi(value);
+            // Calibration section
+            else if (key == "scale_x") calib.scale_x = std::stod(value);
             else if (key == "scale_y") calib.scale_y = std::stod(value);
             else if (key == "offset_x") calib.offset_x = std::stoi(value);
             else if (key == "offset_y") calib.offset_y = std::stoi(value);
@@ -256,7 +266,7 @@ bool load_calibration_config(const std::string& config_file, CalibrationParams& 
     }
     
     in.close();
-    std::cout << "Calibration loaded from: " << config_file << "\n";
+    std::cout << "Configuration loaded from: " << config_file << "\n";
     return true;
 }
 
@@ -264,12 +274,20 @@ void print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [options] [thermal_port] [video_device]\n";
     std::cout << "Options:\n";
-    std::cout << "  --config=<file>  Load calibration from config file\n";
+    std::cout << "  --config=<file>  Load configuration from specified file\n";
+    std::cout << "  --help, -h       Show this help message\n";
+    std::cout << "\nCamera Sources:\n";
     std::cout << "  thermal_port     Serial port for MI48 (default: /dev/ttyACM0)\n";
     std::cout << "  video_device     Video device index or path (default: 0)\n";
+    std::cout << "\nConfiguration Loading:\n";
+    std::cout << "  1. Command line arguments take priority\n";
+    std::cout << "  2. If no args and dual_camera_calibration.ini exists, it's auto-loaded\n";
+    std::cout << "  3. Otherwise, defaults are used\n";
     std::cout << "\nExamples:\n";
-    std::cout << "  " << program_name << " /dev/ttyACM0 0\n";
-    std::cout << "  " << program_name << " --config=/path/to/calibration.ini /dev/ttyACM0 0\n";
+    std::cout << "  " << program_name << "                           # Use defaults or auto-load config\n";
+    std::cout << "  " << program_name << " /dev/ttyACM1 1              # Override sources\n";
+    std::cout << "  " << program_name << " --config=my_setup.ini      # Load specific config\n";
+    std::cout << "  " << program_name << " --config=my_setup.ini /dev/ttyACM2 2  # Load config but override sources\n";
 }
 
 int main(int argc, char *argv[])
@@ -277,6 +295,7 @@ int main(int argc, char *argv[])
     std::string thermal_port = "/dev/ttyACM0";
     int video_device = 0;
     std::string config_file;
+    CalibrationParams calib;  // Move calib declaration here
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -290,6 +309,25 @@ int main(int argc, char *argv[])
             thermal_port = arg;
         } else {
             video_device = std::atoi(arg.c_str());
+        }
+    }
+
+    // Load config file if specified
+    bool config_loaded = false;
+    if (!config_file.empty()) {
+        config_loaded = load_calibration_config(config_file, calib, thermal_port, video_device);
+        if (config_loaded) {
+            std::cout << "Config file: " << config_file << "\n";
+            std::cout << "Using config sources - Thermal: " << thermal_port << ", Video: " << video_device << "\n";
+        }
+    }
+
+    // Check if we should try to read from default config file
+    if (!config_loaded && config_file.empty()) {
+        std::string default_config = "dual_camera_calibration.ini";
+        if (load_calibration_config(default_config, calib, thermal_port, video_device)) {
+            std::cout << "Auto-loaded default config: " << default_config << "\n";
+            std::cout << "Using config sources - Thermal: " << thermal_port << ", Video: " << video_device << "\n";
         }
     }
 
@@ -329,18 +367,11 @@ int main(int argc, char *argv[])
 
     // Display state
     DisplayMode mode = DisplayMode::OVERLAY;
-    CalibrationParams calib;
     bool show_help = false;
     bool calibration_mode = false;
     const double scale_step = 0.02;
     const int offset_step = 2;
     const double rotation_step = 0.5;
-
-    // Load config file if specified
-    if (!config_file.empty()) {
-        load_calibration_config(config_file, calib);
-        std::cout << "Config file: " << config_file << "\n";
-    }
 
     std::string window_name = "Dual Camera Fusion";
     cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
@@ -428,6 +459,7 @@ int main(int argc, char *argv[])
         int key = cv::waitKey(30) & 0xFF;
 
         if (key == 'q' || key == 27) {
+            std::cout << "Quit requested - stopping...\n";
             g_running = false;
             break;
         }
@@ -513,7 +545,7 @@ int main(int argc, char *argv[])
         else if (key == 'p') {
             std::string default_config = "dual_camera_calibration.ini";
             std::string save_file = config_file.empty() ? default_config : config_file;
-            save_calibration_config(save_file, calib);
+            save_calibration_config(save_file, calib, thermal_port, video_device);
         }
         else if (key == 'r') {
             calib = CalibrationParams();
@@ -522,15 +554,22 @@ int main(int argc, char *argv[])
     }
 
     // Cleanup
+    std::cout << "Cleaning up...\n";
     g_running = false;
+    
+    // Stop the reading loop first
     sender.stop_loop();
+    
+    // Wait for thermal thread to finish
+    if (thermal_thread.joinable()) {
+        std::cout << "Waiting for thermal thread to finish...\n";
+        thermal_thread.join();
+    }
+    
+    // Now we can safely stop the stream
     sender.stop_stream();
     rgb_cam.release();
     cv::destroyAllWindows();
-
-    if (thermal_thread.joinable()) {
-        thermal_thread.join();
-    }
 
     std::cout << "Dual camera viewer closed.\n";
     return 0;
