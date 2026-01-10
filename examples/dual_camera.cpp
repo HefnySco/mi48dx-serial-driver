@@ -3,6 +3,8 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <fstream>
+#include <sstream>
 #include <opencv2/opencv.hpp>
 
 // --- Global state ---
@@ -183,7 +185,7 @@ void draw_help_overlay(cv::Mat& image)
         "Arrow keys - Offset",
         "z/x - Rotate +/-",
         "c - Toggle calibration grid",
-        "p - Print current values",
+        "p - Save calibration to config file",
         "r - Reset transformation",
         "h / F1 - Toggle help (this)",
         "q / ESC - Quit"
@@ -203,24 +205,92 @@ void draw_help_overlay(cv::Mat& image)
     }
 }
 
+void save_calibration_config(const std::string& config_file, const CalibrationParams& calib)
+{
+    std::ofstream out(config_file);
+    if (!out.is_open()) {
+        std::cerr << "Failed to open config file for writing: " << config_file << "\n";
+        return;
+    }
+    
+    out << "# Dual Camera Calibration Configuration\n";
+    out << "# Generated automatically - edit values as needed\n\n";
+    out << "[calibration]\n";
+    out << "scale_x=" << calib.scale_x << "\n";
+    out << "scale_y=" << calib.scale_y << "\n";
+    out << "offset_x=" << calib.offset_x << "\n";
+    out << "offset_y=" << calib.offset_y << "\n";
+    out << "rotation=" << calib.rotation << "\n";
+    out << "alpha=" << calib.alpha << "\n";
+    
+    out.close();
+    std::cout << "Calibration saved to: " << config_file << "\n";
+}
+
+bool load_calibration_config(const std::string& config_file, CalibrationParams& calib)
+{
+    std::ifstream in(config_file);
+    if (!in.is_open()) {
+        std::cerr << "Failed to open config file for reading: " << config_file << "\n";
+        return false;
+    }
+    
+    std::string line;
+    while (std::getline(in, line)) {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#') continue;
+        
+        // Parse key=value pairs
+        size_t pos = line.find('=');
+        if (pos != std::string::npos) {
+            std::string key = line.substr(0, pos);
+            std::string value = line.substr(pos + 1);
+            
+            if (key == "scale_x") calib.scale_x = std::stod(value);
+            else if (key == "scale_y") calib.scale_y = std::stod(value);
+            else if (key == "offset_x") calib.offset_x = std::stoi(value);
+            else if (key == "offset_y") calib.offset_y = std::stoi(value);
+            else if (key == "rotation") calib.rotation = std::stod(value);
+            else if (key == "alpha") calib.alpha = std::stod(value);
+        }
+    }
+    
+    in.close();
+    std::cout << "Calibration loaded from: " << config_file << "\n";
+    return true;
+}
+
 void print_usage(const char* program_name)
 {
-    std::cout << "Usage: " << program_name << " [thermal_port] [video_device]\n";
-    std::cout << "  thermal_port  - Serial port for MI48 (default: /dev/ttyACM0)\n";
-    std::cout << "  video_device  - Video device index or path (default: 0)\n";
-    std::cout << "\nExample: " << program_name << " /dev/ttyACM0 0\n";
+    std::cout << "Usage: " << program_name << " [options] [thermal_port] [video_device]\n";
+    std::cout << "Options:\n";
+    std::cout << "  --config=<file>  Load calibration from config file\n";
+    std::cout << "  thermal_port     Serial port for MI48 (default: /dev/ttyACM0)\n";
+    std::cout << "  video_device     Video device index or path (default: 0)\n";
+    std::cout << "\nExamples:\n";
+    std::cout << "  " << program_name << " /dev/ttyACM0 0\n";
+    std::cout << "  " << program_name << " --config=/path/to/calibration.ini /dev/ttyACM0 0\n";
 }
 
 int main(int argc, char *argv[])
 {
     std::string thermal_port = "/dev/ttyACM0";
     int video_device = 0;
+    std::string config_file;
 
-    if (argc > 1) {
-        thermal_port = argv[1];
-    }
-    if (argc > 2) {
-        video_device = std::atoi(argv[2]);
+    // Parse arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.find("--config=") == 0) {
+            config_file = arg.substr(10); // Remove "--config=" prefix
+        } else if (arg == "--help" || arg == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        } else if (thermal_port == "/dev/ttyACM0") {
+            thermal_port = arg;
+        } else {
+            video_device = std::atoi(arg.c_str());
+        }
     }
 
     std::cout << "Dual Camera Thermal-RGB Fusion\n";
@@ -265,6 +335,12 @@ int main(int argc, char *argv[])
     const double scale_step = 0.02;
     const int offset_step = 2;
     const double rotation_step = 0.5;
+
+    // Load config file if specified
+    if (!config_file.empty()) {
+        load_calibration_config(config_file, calib);
+        std::cout << "Config file: " << config_file << "\n";
+    }
 
     std::string window_name = "Dual Camera Fusion";
     cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
@@ -435,14 +511,9 @@ int main(int argc, char *argv[])
             std::cout << "Calibration grid: " << (calibration_mode ? "ON" : "OFF") << "\n";
         }
         else if (key == 'p') {
-            std::cout << "\n--- Current Transformation Values ---\n";
-            std::cout << "Scale X: " << calib.scale_x << "\n";
-            std::cout << "Scale Y: " << calib.scale_y << "\n";
-            std::cout << "Offset X: " << calib.offset_x << "\n";
-            std::cout << "Offset Y: " << calib.offset_y << "\n";
-            std::cout << "Rotation: " << calib.rotation << " deg\n";
-            std::cout << "Alpha: " << calib.alpha << "\n";
-            std::cout << "-------------------------------------\n";
+            std::string default_config = "dual_camera_calibration.ini";
+            std::string save_file = config_file.empty() ? default_config : config_file;
+            save_calibration_config(save_file, calib);
         }
         else if (key == 'r') {
             calib = CalibrationParams();
@@ -452,6 +523,7 @@ int main(int argc, char *argv[])
 
     // Cleanup
     g_running = false;
+    sender.stop_loop();
     sender.stop_stream();
     rgb_cam.release();
     cv::destroyAllWindows();
