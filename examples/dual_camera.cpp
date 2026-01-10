@@ -185,7 +185,7 @@ void draw_help_overlay(cv::Mat& image)
         "c - Toggle calibration grid",
         "p - Print current values",
         "r - Reset transformation",
-        "h - Toggle help (this)",
+        "h / F1 - Toggle help (this)",
         "q / ESC - Quit"
     };
 
@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
     std::string window_name = "Dual Camera Fusion";
     cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
 
-    std::cout << "\nPress 'h' for help\n";
+    std::cout << "\nPress 'h' or F1 for help\n";
 
     while (g_running) {
         cv::Mat rgb_frame;
@@ -355,7 +355,7 @@ int main(int argc, char *argv[])
             g_running = false;
             break;
         }
-        else if (key == 'h') {
+        else if (key == 'h' || key == 16777264) { // 'h' key or F1
             show_help = !show_help;
             std::cout << "Help overlay: " << (show_help ? "ON" : "OFF") << "\n";
         }
