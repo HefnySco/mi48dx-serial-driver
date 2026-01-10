@@ -13,6 +13,14 @@ class SerialCommandSender
 {
 
 public:
+    // Library version information
+    static constexpr int VERSION_MAJOR = 1;
+    static constexpr int VERSION_MINOR = 0;
+    static constexpr int VERSION_PATCH = 0;
+    static constexpr const char* VERSION_STRING = "1.0.0";
+    
+    // Method to get version information
+    static std::string get_version();
     // Define the callback function signature that takes a const reference to the temperature vector
     using FrameCallback = std::function<void(const std::vector<float> &temperatures, const uint16_t rows, const uint16_t cols)>;
 

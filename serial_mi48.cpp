@@ -8,12 +8,23 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+#include <sstream>
 
 // Constructor and destructor
 SerialCommandSender::SerialCommandSender()
     : port(nullptr), m_frame_callback(nullptr), m_streaming(false), m_resolution{DEFAULT_ROWS, DEFAULT_COLS} {}
 
 SerialCommandSender::~SerialCommandSender() { close_port(); }
+
+/**
+ * @brief Returns the library version information.
+ * @return Version string in format "major.minor.patch"
+ */
+std::string SerialCommandSender::get_version() {
+  std::ostringstream oss;
+  oss << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH;
+  return oss.str();
+}
 
 /**
  * @brief Registers a callback function to be called when a new frame is
