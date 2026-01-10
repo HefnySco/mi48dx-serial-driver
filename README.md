@@ -24,9 +24,11 @@ This is a C++ alternative to python [MeridianInnovation PySenxor](https://github
    git clone https://github.com/HefnySco/mi48dx-serial-driver.git
    cd mi48dx-serial-driver
    ```
-2. make all
+2. Build all examples
    ```bash
     make all
-    ls ./examples
    ```
 
+## Examples
+
+See [`examples/README.md`](examples/README.md).
