@@ -364,7 +364,7 @@ void SerialCommandSender::loop_on_read() {
 
   const uint16_t rows = m_resolution.rows;
   const uint16_t cols = m_resolution.cols;
-  const size_t pixel_data_size = (size_t)rows * cols * 2; // 2 bytes per pixel
+  const size_t pixel_data_size = (size_t)rows * cols * BYTES_PER_PIXEL;
 
   // Calculate reserved + header size based on resolution (matches Python GFRAData)
   // MI08 (80x62): reserved=160, header=160, data_start=320
@@ -372,24 +372,24 @@ void SerialCommandSender::loop_on_read() {
   // MI05 (50x50): reserved=100, header=100, data_start=200
   size_t reserved_size;
   size_t header_row_size;
-  if (cols == 160) {
+  if (cols == MI16_COLS) {
     // MI16
-    reserved_size = 3 * 160 * 2;  // 960 bytes
-    header_row_size = 160 * 2;    // 320 bytes
-  } else if (cols == 50) {
+    reserved_size = MI16_RESERVED_SIZE;
+    header_row_size = MI16_HEADER_ROW_SIZE;
+  } else if (cols == MI05_COLS) {
     // MI05
-    reserved_size = 50 * 2;       // 100 bytes
-    header_row_size = 50 * 2;     // 100 bytes
+    reserved_size = MI05_RESERVED_SIZE;
+    header_row_size = MI05_HEADER_ROW_SIZE;
   } else {
-    // MI08 (default, 80 cols)
-    reserved_size = 80 * 2;       // 160 bytes
-    header_row_size = 80 * 2;     // 160 bytes
+    // MI08 (default)
+    reserved_size = MI08_RESERVED_SIZE;
+    header_row_size = MI08_HEADER_ROW_SIZE;
   }
   const size_t gfra_data_offset = reserved_size + header_row_size;  // Offset from GFRA cmd to pixel data
-  const size_t frame_body_len = gfra_data_offset + pixel_data_size + 4;  // +4 for checksum
+  const size_t frame_body_len = gfra_data_offset + pixel_data_size + CHECKSUM_SIZE;
 
-  // Total expected: "   #" (4) + length (4) + "GFRA" (4) + body
-  const size_t minimum_frame_size = 12 + gfra_data_offset + pixel_data_size + 4;
+  // Total expected: header + gfra_data_offset + pixel_data + checksum
+  const size_t minimum_frame_size = FRAME_HEADER_SIZE + gfra_data_offset + pixel_data_size + CHECKSUM_SIZE;
   constexpr size_t MAX_BUFFER_SIZE = 65536;
 
   int consecutive_errors = 0;
@@ -508,8 +508,8 @@ void SerialCommandSender::loop_on_read() {
         }
 
         // Extract pixel data
-        // Data starts at: header_pos + 12 ("   #" + length + "GFRA") + gfra_data_offset
-        size_t data_start = header_pos + 12 + gfra_data_offset;
+        // Data starts at: header_pos + FRAME_HEADER_SIZE + gfra_data_offset
+        size_t data_start = header_pos + FRAME_HEADER_SIZE + gfra_data_offset;
         if (data_start + pixel_data_size > accumulated_data.size()) {
           std::cerr << "WARNING: Insufficient pixel data, discarding frame\n";
           accumulated_data.erase(0, header_pos + total_frame_len);

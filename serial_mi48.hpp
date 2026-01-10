@@ -96,6 +96,24 @@ private:
     static constexpr uint16_t DEFAULT_ROWS = 62;
     static constexpr uint16_t DEFAULT_COLS = 80;
 
+    // GFRA frame format constants
+    static constexpr size_t BYTES_PER_PIXEL = 2;
+    static constexpr size_t CHECKSUM_SIZE = 4;
+    static constexpr size_t FRAME_HEADER_SIZE = 12;  // "   #" (4) + length (4) + "GFRA" (4)
+    
+    // Camera-specific frame offsets
+    static constexpr size_t MI08_COLS = 80;
+    static constexpr size_t MI08_RESERVED_SIZE = 160;    // 80 * 2
+    static constexpr size_t MI08_HEADER_ROW_SIZE = 160;  // 80 * 2
+    
+    static constexpr size_t MI16_COLS = 160;
+    static constexpr size_t MI16_RESERVED_SIZE = 960;    // 3 * 160 * 2
+    static constexpr size_t MI16_HEADER_ROW_SIZE = 320;  // 160 * 2
+    
+    static constexpr size_t MI05_COLS = 50;
+    static constexpr size_t MI05_RESERVED_SIZE = 100;    // 50 * 2
+    static constexpr size_t MI05_HEADER_ROW_SIZE = 100;  // 50 * 2
+
     // MI48 Register Map
     static const std::map<std::string, uint8_t> MI48_REGMAP;
 
@@ -125,8 +143,9 @@ inline const std::map<std::string, uint8_t> SerialCommandSender::MI48_REGMAP = {
     {"EVK_TEST", 0x00}, {"EVK_ID", 0xA5}, {"SENXOR_POWERUP", 0xB0}, {"FRAME_MODE", 0xB1}, {"FW_VERSION_1", 0xB2}, {"FW_VERSION_2", 0xB3}, {"FRAME_RATE", 0xB4}, {"POWER_DOWN_1", 0xB5}, {"STATUS", 0xB6}, {"POWER_DOWN_2", 0xB7}, {"SENXOR_TYPE", 0xBA}, {"MODULE_TYPE", 0xBB}, {"SENS_FACTOR", 0xC2}, {"EMISSIVITY", 0xCA}, {"OFFSET_CORR", 0xCB}, {"FILTER_CTRL", 0xD0}, {"FILTER_1_LSB", 0xD1}, {"FILTER_1_MSB", 0xD2}, {"FILTER_2", 0xD3}, {"FLASH_CTRL", 0xD8}, {"SENXOR_ID_0", 0xE0}, {"SENXOR_ID_1", 0xE1}, {"SENXOR_ID_2", 0xE2}, {"SENXOR_ID_3", 0xE3}, {"SENXOR_ID_4", 0xE4}, {"SENXOR_ID_5", 0xE5}};
 
 // Camera types & correspondant resolutions.
+// Note: Frame format is cols×rows, so MI08 80×62 means {rows=80, cols=62}
 inline const std::map<uint8_t, SerialCommandSender::Resolution> SerialCommandSender::FPA_SHAPE = {
-    {0, {62, 80}}, {1, {62, 80}}, {2, {32, 32}}, {3, {62, 80}}, {4, {62, 80}}, {8, {120, 160}}};
+    {0, {80, 62}}, {1, {80, 62}}, {2, {32, 32}}, {3, {80, 62}}, {4, {80, 62}}, {8, {160, 120}}};
 
 // Command initialization sequence.
 inline const std::vector<SerialCommandSender::Command> SerialCommandSender::COMMAND_LIST = {
