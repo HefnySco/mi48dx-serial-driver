@@ -361,6 +361,7 @@ int main(int argc, char *argv[])
         }
         else if (key == '1') {
             mode = DisplayMode::SEPARATE;
+            cv::destroyWindow(window_name);
             std::cout << "Mode: Separate windows\n";
         }
         else if (key == '2') {
