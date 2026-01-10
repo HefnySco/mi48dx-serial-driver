@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <vector>
 // Assuming these are defined elsewhere
-#define TIMEOUT_MILLISECONDS 1000
+#define TIMEOUT_MILLISECONDS 2000
 #define COMMAND_DELAY_MS 10
 #define KELVIN_0 -273.15
 
@@ -78,6 +78,18 @@ bool SerialCommandSender::open_port(const std::string &port_path) {
   // Verify camera communication by reading SENXOR_TYPE (matches Python's
   // refresh_regmap())
   std::cout << "Verifying camera communication...\n";
+
+  // Read FRAME_MODE to verify stop_stream worked (matches Python)
+  if (!get_frame_mode(response)) {
+    std::cerr << "Warning: Failed to read FRAME_MODE\n";
+  }
+
+  // Read STATUS register to check for errors (matches Python)
+  if (!get_status(response)) {
+    std::cerr << "Warning: Failed to read STATUS\n";
+  }
+
+  // Read SENXOR_TYPE to get camera resolution
   if (!get_senxor_type(response)) {
     std::cerr << "ERROR: Failed to read SENXOR_TYPE. Camera not responding.\n";
     sp_close(port);
@@ -288,11 +300,46 @@ void SerialCommandSender::send_and_receive_serial_command() {
 }
 
 /**
+ * @brief Validates the checksum of a GFRA frame.
+ * Checksum is sum of (length bytes + cmd bytes + data bytes) & 0xFFFF
+ */
+static bool validate_checksum(const std::string &data, size_t frame_start,
+                              size_t frame_len) {
+  if (frame_start + 8 + frame_len > data.size()) {
+    return false;
+  }
+
+  // Parse expected checksum from last 4 bytes of frame body
+  size_t checksum_start = frame_start + 8 + frame_len - 4;
+  std::string checksum_str = data.substr(checksum_start, 4);
+  uint16_t expected_checksum;
+  try {
+    expected_checksum = std::stoi(checksum_str, nullptr, 16);
+  } catch (...) {
+    return false;
+  }
+
+  // Calculate actual checksum: sum of length bytes + cmd + data (excluding checksum)
+  uint32_t actual_checksum = 0;
+  // Length bytes (4 bytes at offset 4)
+  for (size_t i = frame_start + 4; i < frame_start + 8; ++i) {
+    actual_checksum += (uint8_t)data[i];
+  }
+  // CMD + data (excluding final 4 checksum bytes)
+  for (size_t i = frame_start + 8; i < checksum_start; ++i) {
+    actual_checksum += (uint8_t)data[i];
+  }
+  actual_checksum &= 0xFFFF;
+
+  return actual_checksum == expected_checksum;
+}
+
+/**
  * @brief Loops reading raw serial data until no data is received, displaying
  * temperatures for 1-in-5 rows and columns.
  */
 void SerialCommandSender::loop_on_read() {
-#define DEBUG_HEADER 1
+#define DEBUG_HEADER 0
   if (!port) {
     std::cerr << "\n--- ERROR ---\n";
     std::cerr << "Serial port is not open. Call open_port() first.\n";
@@ -307,200 +354,218 @@ void SerialCommandSender::loop_on_read() {
   }
 
   //----------------------------------------------------------------------------------------------------------------------
-  // GFRA FORMAT:
+  // GFRA FORMAT (from Python library):
   //
   //         |   CMD  |   RESERVED   |  HEADER |     DATA      | CHECKSUM |
   //  MI08   |  GFRA  |    80 * 2    |  80 * 2 |  80 * 62 * 2  |    4     |
-  //  data_len: 10240 body_len: 10248(0x2808) MI16   |  GFRA  |  3 * 160 * 2 |
-  //  160 * 2 | 160 * 120 * 2 |    4     | data_len: 39680 body_len:
-  //  39688(0x9B08) MI05   |  GFRA  |    50 * 2    |  50 * 2 |  50 * 50 * 2  |
-  //  4     | data_len:  5200 body_len: 5208(0x1458)
+  //         data at slice(320, 10240), body_len: 10248 (0x2808)
+  //  MI16   |  GFRA  |  3 * 160 * 2 | 160 * 2 | 160 * 120 * 2 |    4     |
+  //         data at slice(1280, 39680), body_len: 39688 (0x9B08)
+  //  MI05   |  GFRA  |    50 * 2    |  50 * 2 |  50 * 50 * 2  |    4     |
+  //         data at slice(200, 5200), body_len: 5208 (0x1458)
   //
   //----------------------------------------------------------------------------------------------------------------------
 
   const uint16_t rows = m_resolution.first;
   const uint16_t cols = m_resolution.second;
-  size_t expected_data_size = (size_t)rows * cols * 2; // 2 bytes per pixel
-  size_t minimum_size =
-      12 + (80 * 4) + expected_data_size; // "   #xxxxGFRA" (12 bytes) + 80
-                                          // words (320 bytes) + frame data
-  constexpr size_t MAX_BUFFER_SIZE = 19201;
+  const size_t pixel_data_size = (size_t)rows * cols * 2; // 2 bytes per pixel
+
+  // Calculate reserved + header size based on resolution (matches Python GFRAData)
+  // MI08 (80x62): reserved=160, header=160, data_start=320
+  // MI16 (160x120): reserved=960, header=320, data_start=1280
+  // MI05 (50x50): reserved=100, header=100, data_start=200
+  size_t reserved_size;
+  size_t header_row_size;
+  if (cols == 160) {
+    // MI16
+    reserved_size = 3 * 160 * 2;  // 960 bytes
+    header_row_size = 160 * 2;    // 320 bytes
+  } else if (cols == 50) {
+    // MI05
+    reserved_size = 50 * 2;       // 100 bytes
+    header_row_size = 50 * 2;     // 100 bytes
+  } else {
+    // MI08 (default, 80 cols)
+    reserved_size = 80 * 2;       // 160 bytes
+    header_row_size = 80 * 2;     // 160 bytes
+  }
+  const size_t gfra_data_offset = reserved_size + header_row_size;  // Offset from GFRA cmd to pixel data
+  const size_t frame_body_len = gfra_data_offset + pixel_data_size + 4;  // +4 for checksum
+
+  // Total expected: "   #" (4) + length (4) + "GFRA" (4) + body
+  const size_t minimum_frame_size = 12 + gfra_data_offset + pixel_data_size + 4;
+  constexpr size_t MAX_BUFFER_SIZE = 65536;
+
+  int consecutive_errors = 0;
+  constexpr int MAX_CONSECUTIVE_ERRORS = 10;
 
   try {
-    bool received_data = true;
+    bool keep_running = true;
     char buffer[MAX_BUFFER_SIZE];
-    while (received_data) {
-      received_data = false;
-      std::string response_string_raw;
-      response_string_raw.clear(); // Explicitly clear the string
-      long start_time = clock();
+    std::string accumulated_data;
 
-      // Read data until "   #xxxxGFRA" + 80 words + frame data or timeout
+    while (keep_running) {
+      long start_time = clock();
+      bool got_data_this_cycle = false;
+
+      // Read data until we have a complete frame or timeout
       while ((clock() - start_time) * 1000 / CLOCKS_PER_SEC <
              TIMEOUT_MILLISECONDS) {
         int current_read =
             sp_nonblocking_read(port, buffer, sizeof(buffer) - 1);
         if (current_read > 0) {
-          response_string_raw.append(buffer, current_read);
-          received_data = true;
-          // Check if we have "   #xxxxGFRA" (3 spaces + # + 4 hex digits +
-          // GFRA) and enough data after it This matches the USB protocol format
-          // from the Python implementation
-          for (size_t i = 0; i <= response_string_raw.size() - 12; ++i) {
-            // Look for "   #" (3 spaces followed by #)
-            if (i + 12 <= response_string_raw.size() &&
-                response_string_raw[i] == ' ' &&
-                response_string_raw[i + 1] == ' ' &&
-                response_string_raw[i + 2] == ' ' &&
-                response_string_raw[i + 3] == '#' &&
-                isxdigit(response_string_raw[i + 4]) &&
-                isxdigit(response_string_raw[i + 5]) &&
-                isxdigit(response_string_raw[i + 6]) &&
-                isxdigit(response_string_raw[i + 7]) &&
-                response_string_raw.substr(i + 8, 4) == "GFRA") {
-              size_t required_size =
-                  i + 12 + (80 * 4) +
-                  expected_data_size; // Data from start of "   #xxxxGFRA"
-              if (response_string_raw.size() >= required_size) {
-                minimum_size =
-                    required_size; // Update minimum_size to include offset
-                break;
-              }
-            }
-          }
-          if (response_string_raw.size() >= minimum_size) {
+          accumulated_data.append(buffer, current_read);
+          got_data_this_cycle = true;
+
+          // Check if we have enough data for a frame
+          if (accumulated_data.size() >= minimum_frame_size) {
             break;
           }
         }
-        usleep(10000);
+        usleep(5000);
       }
 
-      // Data Processing
-      if (received_data && response_string_raw.size() >= minimum_size) {
-        const char *data_ptr = response_string_raw.data();
-        const size_t total_pixels = rows * cols;
-        size_t start_index = 0;
-        size_t header_size = 0;
-        bool found = false;
+      if (!got_data_this_cycle) {
+        // No data received at all this cycle
+        std::cout << "\nNo data received, stopping stream.\n";
+        keep_running = false;
+        continue;
+      }
 
-        // Find "   #xxxxGFRA" (3 spaces + # + 4 hex digits + GFRA)
-        for (size_t i = 0; i <= response_string_raw.size() - 12; ++i) {
-          if (response_string_raw[i] == ' ' &&
-              response_string_raw[i + 1] == ' ' &&
-              response_string_raw[i + 2] == ' ' &&
-              response_string_raw[i + 3] == '#' &&
-              isxdigit(response_string_raw[i + 4]) &&
-              isxdigit(response_string_raw[i + 5]) &&
-              isxdigit(response_string_raw[i + 6]) &&
-              isxdigit(response_string_raw[i + 7]) &&
-              response_string_raw.substr(i + 8, 4) == "GFRA") {
-#ifdef DEBUG_HEADER
-            std::cout << "   #xxxxGFRA found at index: " << i
-                      << " (xxxx = " << response_string_raw.substr(i + 4, 4)
-                      << ")\n";
-#endif
-            header_size =
-                i + 12 +
-                (80 * 4); // Header ends after "   #xxxxGFRA" + 80 words
-            start_index = header_size; // Frame data starts immediately after
-            found = true;
+      // Try to find and parse a complete frame
+      bool frame_processed = false;
+      size_t search_start = 0;
+
+      while (search_start + 12 <= accumulated_data.size()) {
+        // Look for "   #" header
+        size_t header_pos = accumulated_data.find("   #", search_start);
+        if (header_pos == std::string::npos) {
+          // No header found, discard data up to end minus potential partial header
+          if (accumulated_data.size() > 3) {
+            accumulated_data.erase(0, accumulated_data.size() - 3);
+          }
+          break;
+        }
+
+        // Check if we have enough bytes to read the length field
+        if (header_pos + 8 > accumulated_data.size()) {
+          // Partial header, keep waiting
+          break;
+        }
+
+        // Validate hex digits for length
+        bool valid_length = true;
+        for (size_t i = header_pos + 4; i < header_pos + 8; ++i) {
+          if (!isxdigit(accumulated_data[i])) {
+            valid_length = false;
             break;
           }
         }
 
-        if (!found) {
-          std::cout << "TIMEOUT: '   #xxxxGFRA' not found in received data\n";
+        if (!valid_length) {
+          // Invalid length field, skip this header
+          search_start = header_pos + 1;
           continue;
         }
 
-        std::cout << "Header ends at index: " << header_size << "\n";
+        // Parse length
+        std::string len_str = accumulated_data.substr(header_pos + 4, 4);
+        size_t body_len;
+        try {
+          body_len = std::stoul(len_str, nullptr, 16);
+        } catch (...) {
+          search_start = header_pos + 1;
+          continue;
+        }
 
-#ifdef DEBUG_HEADER
-        // Print header bytes in hex
-        for (size_t i = 0; i < header_size && i < response_string_raw.size();
-             ++i) {
-          std::cout << std::hex << std::setfill('0');
-          std::cout << std::setw(2) << (int)(uint8_t)data_ptr[i] << ",";
+        // Check if we have the complete frame
+        size_t total_frame_len = 8 + body_len;  // header(4) + length(4) + body
+        if (header_pos + total_frame_len > accumulated_data.size()) {
+          // Incomplete frame, wait for more data
+          break;
         }
-        std::cout << "\n DATA \n";
-        // Print first 450 bytes of data in hex
-        for (size_t i = start_index;
-             i < start_index + 450 && i < response_string_raw.size(); ++i) {
-          std::cout << std::hex << std::setfill('0');
-          std::cout << std::setw(2) << (int)(uint8_t)data_ptr[i] << ",";
+
+        // Check if this is a GFRA frame
+        std::string cmd = accumulated_data.substr(header_pos + 8, 4);
+        if (cmd != "GFRA") {
+          // Not a GFRA frame, skip it
+          accumulated_data.erase(0, header_pos + total_frame_len);
+          search_start = 0;
+          continue;
         }
-        std::cout << "\n ";
+
+#if DEBUG_HEADER
+        std::cout << "Found GFRA at " << header_pos << ", body_len=" << body_len << "\n";
 #endif
 
-        // Check if enough data remains after start_index
-        if (start_index + expected_data_size > response_string_raw.size()) {
-          std::cout << "TIMEOUT: Insufficient data after header ("
-                    << expected_data_size << " bytes needed, "
-                    << (response_string_raw.size() - start_index)
-                    << " bytes available)\n";
+        // Validate checksum
+        if (!validate_checksum(accumulated_data, header_pos, body_len)) {
+          std::cerr << "WARNING: Checksum mismatch, discarding frame\n";
+          accumulated_data.erase(0, header_pos + total_frame_len);
+          search_start = 0;
+          consecutive_errors++;
+          if (consecutive_errors >= MAX_CONSECUTIVE_ERRORS) {
+            std::cerr << "ERROR: Too many consecutive errors, stopping\n";
+            keep_running = false;
+          }
           continue;
         }
 
+        // Extract pixel data
+        // Data starts at: header_pos + 12 ("   #" + length + "GFRA") + gfra_data_offset
+        size_t data_start = header_pos + 12 + gfra_data_offset;
+        if (data_start + pixel_data_size > accumulated_data.size()) {
+          std::cerr << "WARNING: Insufficient pixel data, discarding frame\n";
+          accumulated_data.erase(0, header_pos + total_frame_len);
+          search_start = 0;
+          consecutive_errors++;
+          continue;
+        }
+
+        const char *data_ptr = accumulated_data.data();
+        const size_t total_pixels = rows * cols;
         std::vector<float> temperatures(total_pixels);
+        bool frame_valid = true;
+
         // Convert int16_t values to Celsius (little-endian)
         for (size_t i = 0; i < total_pixels; ++i) {
-          size_t byte_index = start_index + (i * 2);
-          if (byte_index + 1 >= response_string_raw.size()) {
-            std::cerr << "❌ ERROR: Insufficient data for pixel " << i
-                      << " at byte " << byte_index << "\n";
-            break;
-          }
+          size_t byte_index = data_start + (i * 2);
+          uint16_t raw_data_val =
+              (uint16_t)(((uint8_t)data_ptr[byte_index + 1] << 8) |
+                         ((uint8_t)data_ptr[byte_index]));
 
-          u_int16_t raw_data_val =
-              (u_int16_t)(((u_int16_t)(data_ptr[byte_index + 1]) << 8) |
-                          ((u_int16_t)data_ptr[byte_index] & 0x00ff));
-          if (raw_data_val > 5000) {
-            // Set up hex formatting once
-            std::cout << std::hex << std::setfill('0');
-            // 1. Display High Byte (data_ptr[byte_index + 1])
-            std::cout << "High Byte: 0x" << std::setw(2)
-                      << (int)(unsigned char)data_ptr[byte_index + 1];
-            // 2. Display Low Byte (data_ptr[byte_index])
-            std::cout << " | Low Byte: 0x" << std::setw(2)
-                      << (int)(unsigned char)data_ptr[byte_index];
-            // 3. Display Combined raw_data_val
-            std::cout << " | Combined Raw: 0x" << std::setw(4) << raw_data_val;
-            // 4. Display Combined raw_data_val (Decimal)
-            // Switch to decimal mode and use a standard fill/width
-            std::cout << std::dec << std::setfill(' ');
-            std::cout << " | Combined Dec: " << std::setw(5)
-                      << raw_data_val; // Use a reasonable decimal width
-            // Reset formatting
-            std::cout << "-----------------------------------index:"
-                      << byte_index;
-            std::cout << "\n";
-            raw_data_val = temperatures[i - 1];
-            response_string_raw.clear();
-            break;
-          }
-
+          // Temperature in deciKelvin, convert to Celsius
           const float temp_celsius = ((float)raw_data_val / 10.0) + KELVIN_0;
           temperatures[i] = temp_celsius;
         }
 
-        if ((m_frame_callback) &&
-            (total_pixels > 0 && temperatures.size() == total_pixels)) {
-          // Invoke the callback with the new frame data
+        // Invoke callback if frame is valid
+        if (frame_valid && m_frame_callback && temperatures.size() == total_pixels) {
           m_frame_callback(temperatures, rows, cols);
+          consecutive_errors = 0;  // Reset error counter on success
         }
-        response_string_raw.clear();
-        // response_string_raw.erase(0, header_size + expected_data_size);
-        usleep(COMMAND_DELAY_MS * 1000);
-      } else {
-        std::cout << "TIMEOUT: No full frame (" << minimum_size
-                  << " bytes) received after " << TIMEOUT_MILLISECONDS
-                  << " ms. Received " << response_string_raw.size()
-                  << " bytes.\n";
+
+        frame_processed = true;
+
+        // Remove processed frame from buffer
+        accumulated_data.erase(0, header_pos + total_frame_len);
+        search_start = 0;
+        break;
+      }
+
+      if (!frame_processed && got_data_this_cycle) {
+        consecutive_errors++;
+        if (consecutive_errors >= MAX_CONSECUTIVE_ERRORS) {
+          std::cerr << "ERROR: Too many consecutive frame errors\n";
+          // Flush and try to recover
+          sp_flush(port, SP_BUF_INPUT);
+          accumulated_data.clear();
+          consecutive_errors = 0;
+        }
       }
     }
-    std::cout << "\nNo data received in the last read cycle, stopping.\n";
+    std::cout << "\nStream ended.\n";
   } catch (const std::exception &e) {
-    std::cout << "\033[2J\033[H";
     std::cerr << "\n--- COMMUNICATION ERROR ---\n";
     std::cerr << "An error occurred during communication: " << e.what() << "\n";
   }
