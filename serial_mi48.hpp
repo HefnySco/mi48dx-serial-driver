@@ -74,12 +74,19 @@ private:
     // --- Configuration ---
     static constexpr const char *PORT_NAME = "/dev/ttyACM0";
     static constexpr int BAUD_RATE = 115200;
-    static constexpr int TIMEOUT_MILLISECONDS = 1000;
-    static constexpr int COMMAND_DELAY_MS = 100;
+    static constexpr int TIMEOUT_MILLISECONDS = 2000;
+    static constexpr int COMMAND_DELAY_MS = 10;
+
+    // Resolution type and mapping
+    struct Resolution {
+        uint16_t rows;
+        uint16_t cols;
+    };
 
     // Callback
     FrameCallback m_frame_callback; // Member to store the callback function
     std::atomic<bool> m_streaming;  // Control flag for the streaming loop
+    Resolution m_resolution; // Camera resolution
 
     
     // MI48-specific constants
@@ -92,8 +99,6 @@ private:
     // MI48 Register Map
     static const std::map<std::string, uint8_t> MI48_REGMAP;
 
-    // Resolution type and mapping
-    using Resolution = std::pair<uint16_t, uint16_t>;
     static const std::map<uint8_t, Resolution> FPA_SHAPE;
 
     // Command structure
@@ -108,7 +113,6 @@ private:
     static const std::vector<Command> COMMAND_LIST;
 
     struct sp_port *port;    // Serial port handle
-    Resolution m_resolution; // Camera resolution
 
     void list_available_ports();
     std::string generate_read_command(const std::string &reg_name);
@@ -122,7 +126,7 @@ inline const std::map<std::string, uint8_t> SerialCommandSender::MI48_REGMAP = {
 
 // Camera types & correspondant resolutions.
 inline const std::map<uint8_t, SerialCommandSender::Resolution> SerialCommandSender::FPA_SHAPE = {
-    {0, {80, 62}}, {1, {80, 62}}, {2, {32, 32}}, {3, {80, 62}}, {4, {80, 62}}, {8, {160, 120}}};
+    {0, {62, 80}}, {1, {62, 80}}, {2, {32, 32}}, {3, {62, 80}}, {4, {62, 80}}, {8, {120, 160}}};
 
 // Command initialization sequence.
 inline const std::vector<SerialCommandSender::Command> SerialCommandSender::COMMAND_LIST = {

@@ -8,14 +8,10 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-// Assuming these are defined elsewhere
-#define TIMEOUT_MILLISECONDS 2000
-#define COMMAND_DELAY_MS 10
-#define KELVIN_0 -273.15
 
 // Constructor and destructor
 SerialCommandSender::SerialCommandSender()
-    : port(nullptr), m_resolution(DEFAULT_ROWS, DEFAULT_COLS), m_streaming(false) {}
+    : port(nullptr), m_frame_callback(nullptr), m_streaming(false), m_resolution{DEFAULT_ROWS, DEFAULT_COLS} {}
 
 SerialCommandSender::~SerialCommandSender() { close_port(); }
 
@@ -366,8 +362,8 @@ void SerialCommandSender::loop_on_read() {
   //
   //----------------------------------------------------------------------------------------------------------------------
 
-  const uint16_t rows = m_resolution.first;
-  const uint16_t cols = m_resolution.second;
+  const uint16_t rows = m_resolution.rows;
+  const uint16_t cols = m_resolution.cols;
   const size_t pixel_data_size = (size_t)rows * cols * 2; // 2 bytes per pixel
 
   // Calculate reserved + header size based on resolution (matches Python GFRAData)
@@ -661,8 +657,8 @@ bool SerialCommandSender::get_senxor_type(int &response_value) {
   bool succ = send_command(cmd, response_value);
   if (succ && response_value != UINT8_MAX) {
     m_resolution = FPA_SHAPE.at(response_value);
-    std::cout << "Camera resolution: " << m_resolution.first << "x"
-              << m_resolution.second << "\n";
+    std::cout << "Camera resolution: " << m_resolution.rows << "x"
+              << m_resolution.cols << "\n";
   }
   return succ;
 }
