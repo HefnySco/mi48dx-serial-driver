@@ -15,7 +15,7 @@
 
 // Constructor and destructor
 SerialCommandSender::SerialCommandSender()
-    : port(nullptr), m_resolution(DEFAULT_ROWS, DEFAULT_COLS) {}
+    : port(nullptr), m_resolution(DEFAULT_ROWS, DEFAULT_COLS), m_streaming(false) {}
 
 SerialCommandSender::~SerialCommandSender() { close_port(); }
 
@@ -400,11 +400,11 @@ void SerialCommandSender::loop_on_read() {
   constexpr int MAX_CONSECUTIVE_ERRORS = 10;
 
   try {
-    bool keep_running = true;
+    m_streaming = true;
     char buffer[MAX_BUFFER_SIZE];
     std::string accumulated_data;
 
-    while (keep_running) {
+    while (m_streaming) {
       long start_time = clock();
       bool got_data_this_cycle = false;
 
@@ -428,7 +428,7 @@ void SerialCommandSender::loop_on_read() {
       if (!got_data_this_cycle) {
         // No data received at all this cycle
         std::cout << "\nNo data received, stopping stream.\n";
-        keep_running = false;
+        m_streaming = false;
         continue;
       }
 
@@ -506,7 +506,7 @@ void SerialCommandSender::loop_on_read() {
           consecutive_errors++;
           if (consecutive_errors >= MAX_CONSECUTIVE_ERRORS) {
             std::cerr << "ERROR: Too many consecutive errors, stopping\n";
-            keep_running = false;
+            m_streaming = false;
           }
           continue;
         }
@@ -569,6 +569,10 @@ void SerialCommandSender::loop_on_read() {
     std::cerr << "\n--- COMMUNICATION ERROR ---\n";
     std::cerr << "An error occurred during communication: " << e.what() << "\n";
   }
+}
+
+void SerialCommandSender::stop_loop() {
+  m_streaming = false;
 }
 
 bool SerialCommandSender::start_stream(bool with_header) {

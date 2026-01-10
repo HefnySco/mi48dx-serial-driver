@@ -28,6 +28,7 @@ public:
     void close_port();
     void send_and_receive_serial_command();
     void loop_on_read();
+    void stop_loop();
     bool start_stream(bool with_header);
     bool stop_stream();
     bool get_evk_test(int &response_value);
