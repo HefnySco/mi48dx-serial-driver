@@ -39,6 +39,7 @@ public:
     bool get_evk_test(int &response_value);
     bool get_evk_id(int &response_value);
     bool get_senxor_powerup(int &response_value);
+    bool set_senxor_powerup(uint8_t value, int &response_value);
     bool get_frame_mode(int &response_value);
     bool set_frame_mode(uint8_t value, int &response_value);
     bool get_fw_version_1(int &response_value);

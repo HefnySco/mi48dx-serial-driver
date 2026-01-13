@@ -128,7 +128,7 @@ bool SerialCommandSender::initialize_camera(bool verbose) {
     if (!has_bridge) {
       if (verbose) std::cout << "Powering up sensor (SENXOR_POWERUP = 0x13)...\n";
       int powerup_response;
-      get_senxor_powerup(powerup_response);
+      set_senxor_powerup(0x13, powerup_response);
       usleep(100000); // 100ms delay
     }
   }
@@ -760,6 +760,11 @@ bool SerialCommandSender::get_evk_id(int &response_value) {
 
 bool SerialCommandSender::get_senxor_powerup(int &response_value) {
   Command cmd = {"SENXOR_POWERUP", false, 0};
+  return send_command(cmd, response_value);
+}
+
+bool SerialCommandSender::set_senxor_powerup(uint8_t value, int &response_value) {
+  Command cmd = {"SENXOR_POWERUP", true, value};
   return send_command(cmd, response_value);
 }
 
