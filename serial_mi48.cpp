@@ -54,6 +54,10 @@ bool SerialCommandSender::open_port(const std::string &port_path) {
   sp_set_bits(port, 8);
   sp_set_parity(port, SP_PARITY_NONE);
   sp_set_stopbits(port, 1);
+  result = sp_set_flowcontrol(port, SP_FLOWCONTROL_RTSCTS);
+  if (result != SP_OK) {
+    std::cerr << "Warning: Failed to enable RTS/CTS flow control: " << sp_last_error_message() << "\n";
+  }
   sp_set_dtr(port, SP_DTR_ON);
   sp_set_rts(port, SP_RTS_ON);
 
