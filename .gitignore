@@ -1,7 +1,11 @@
 *.o
 serial_mi48
-
+libmi48.so
+libmi48.a
+mi48.pc
+mi48Config.cmake.in
 advanced_display
 raw_display
 simple_display
 dual_camera
+build/

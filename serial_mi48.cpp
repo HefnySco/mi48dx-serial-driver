@@ -8,23 +8,12 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-#include <sstream>
 
 // Constructor and destructor
 SerialCommandSender::SerialCommandSender()
     : port(nullptr), m_frame_callback(nullptr), m_streaming(false), m_resolution{DEFAULT_ROWS, DEFAULT_COLS} {}
 
 SerialCommandSender::~SerialCommandSender() { close_port(); }
-
-/**
- * @brief Returns the library version information.
- * @return Version string in format "major.minor.patch"
- */
-std::string SerialCommandSender::get_version() {
-  std::ostringstream oss;
-  oss << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH;
-  return oss.str();
-}
 
 /**
  * @brief Registers a callback function to be called when a new frame is
@@ -119,6 +108,150 @@ void SerialCommandSender::close_port() {
     port = nullptr;
     std::cout << "\nSerial port closed.\n";
   }
+}
+
+bool SerialCommandSender::initialize_camera(bool verbose) {
+  if (port == nullptr) {
+    std::cerr << "ERROR: Port not opened. Call open_port() first.\n";
+    return false;
+  }
+
+  if (verbose) std::cout << "\n=== MI48 Camera Initialization Sequence ===\n";
+
+  // Step 1: Check if EVK has bridge board (EVK_TEST register)
+  int evk_test_value;
+  if (get_evk_test(evk_test_value)) {
+    bool has_bridge = (evk_test_value == 0xFF);
+    if (verbose) std::cout << "EVK Bridge detected: " << (has_bridge ? "YES" : "NO") << "\n";
+    
+    // Step 2: Power up sensor if no bridge detected
+    if (!has_bridge) {
+      if (verbose) std::cout << "Powering up sensor (SENXOR_POWERUP = 0x13)...\n";
+      int powerup_response;
+      get_senxor_powerup(powerup_response);
+      usleep(100000); // 100ms delay
+    }
+  }
+
+  // Step 3: Check and stop any existing capture
+  int current_mode;
+  if (get_frame_mode(current_mode)) {
+    if (verbose) std::cout << "Current FRAME_MODE: 0x" << std::hex << current_mode << std::dec << "\n";
+    if (current_mode & 0x03) { // GET_SINGLE_FRAME or CONTINUOUS_STREAM bits set
+      if (verbose) std::cout << "Stopping existing capture...\n";
+      stop_stream();
+      usleep(100000); // 100ms delay
+    }
+  }
+
+  // Step 4: Get camera information
+  if (verbose) std::cout << "\n=== Camera Information ===\n";
+  int camera_type, module_type, evk_id;
+  if (get_senxor_type(camera_type)) {
+    if (verbose) std::cout << "Camera Type: " << camera_type << "\n";
+  }
+  if (get_module_type(module_type)) {
+    if (verbose) std::cout << "Module Type: " << module_type << "\n";
+  }
+  if (get_evk_id(evk_id)) {
+    if (verbose) std::cout << "EVK ID: " << evk_id << "\n";
+  }
+
+  // Get sensor ID (serial number)
+  if (verbose) {
+    std::cout << "Sensor ID: ";
+    for (int i = 0; i < 6; i++) {
+      int id_byte;
+      bool success = false;
+      switch (i) {
+        case 0: success = get_senxor_id_0(id_byte); break;
+        case 1: success = get_senxor_id_1(id_byte); break;
+        case 2: success = get_senxor_id_2(id_byte); break;
+        case 3: success = get_senxor_id_3(id_byte); break;
+        case 4: success = get_senxor_id_4(id_byte); break;
+        case 5: success = get_senxor_id_5(id_byte); break;
+      }
+      if (success) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << id_byte;
+      }
+    }
+    std::cout << std::dec << "\n";
+  }
+
+  // Get firmware version
+  int fw_ver1, fw_ver2;
+  if (get_fw_version_1(fw_ver1) && get_fw_version_2(fw_ver2)) {
+    int major = (fw_ver1 >> 4) & 0xF;
+    int minor = fw_ver1 & 0xF;
+    int build = fw_ver2;
+    if (verbose) std::cout << "Firmware Version: " << major << "." << minor << "." << build << "\n";
+  }
+
+  // Step 5: Wait for bootup to complete (check STATUS register)
+  if (verbose) std::cout << "\n=== Waiting for Bootup ===\n";
+  bool boot_complete = false;
+  int max_boot_attempts = 50;
+  for (int attempt = 0; attempt < max_boot_attempts && !boot_complete; ++attempt) {
+    int status;
+    if (get_status(status)) {
+      bool booting = (status & 0x20); // BOOTING_UP flag
+      if (!booting) {
+        boot_complete = true;
+        if (verbose) std::cout << "Bootup complete. STATUS: 0x" << std::hex << status << std::dec << "\n";
+        
+        // Check for errors
+        if (status & 0x02 && verbose) std::cout << "WARNING: Readout too slow\n";
+        if (status & 0x04) {
+          std::cerr << "ERROR: SenXor interface error\n";
+          return false;
+        }
+        if (status & 0x08) {
+          std::cerr << "ERROR: Capture error\n";
+          return false;
+        }
+        if (status & 0x10 && verbose) std::cout << "INFO: Data ready\n";
+      } else {
+        if (verbose) std::cout << "Booting... (attempt " << (attempt + 1) << ")\n";
+        usleep(25000); // 25ms delay
+      }
+    }
+  }
+
+  if (!boot_complete) {
+    std::cerr << "ERROR: Camera failed to complete bootup\n";
+    return false;
+  }
+
+  // Step 6: Configure camera settings
+  if (verbose) std::cout << "\n=== Configuring Camera ===\n";
+  
+  // Set frame rate (divisor = 4 for ~6.4 fps on MI0801)
+  int frame_rate_response;
+  set_frame_rate(4, frame_rate_response);
+  if (verbose) std::cout << "Frame rate divisor set to 4\n";
+
+  // Disable all filters initially
+  int filter_ctrl_response;
+  set_filter_ctrl(0x00, filter_ctrl_response);
+  if (verbose) std::cout << "Filters disabled (FILTER_CTRL = 0x00)\n";
+
+  // Set sensitivity factor to 1.00 (0x64 = 100%)
+  int sens_factor_response;
+  set_sens_factor(0x64, sens_factor_response);
+  if (verbose) std::cout << "Sensitivity factor set to 1.00 (0x64)\n";
+
+  // Set emissivity to 0.95 (95%)
+  int emissivity_response;
+  set_emissivity(0x5F, emissivity_response); // 0x5F = 95 decimal
+  if (verbose) std::cout << "Emissivity set to 0.95 (95%)\n";
+
+  // Flush buffers after configuration to ensure clean state
+  if (verbose) std::cout << "Flushing buffers after configuration...\n";
+  sp_flush(port, SP_BUF_BOTH);
+  usleep(100000); // 100ms delay for settings to take effect
+
+  if (verbose) std::cout << "\n=== Camera Initialization Complete ===\n\n";
+  return true;
 }
 
 void SerialCommandSender::list_available_ports() {
@@ -311,8 +444,9 @@ void SerialCommandSender::send_and_receive_serial_command() {
  * Checksum is sum of (length bytes + cmd bytes + data bytes) & 0xFFFF
  */
 static bool validate_checksum(const std::string &data, size_t frame_start,
-                              size_t frame_len) {
+                              size_t frame_len, bool verbose = false) {
   if (frame_start + 8 + frame_len > data.size()) {
+    if (verbose) std::cerr << "Checksum validation: insufficient data\n";
     return false;
   }
 
@@ -323,6 +457,7 @@ static bool validate_checksum(const std::string &data, size_t frame_start,
   try {
     expected_checksum = std::stoi(checksum_str, nullptr, 16);
   } catch (...) {
+    if (verbose) std::cerr << "Checksum validation: failed to parse checksum string\n";
     return false;
   }
 
@@ -338,7 +473,16 @@ static bool validate_checksum(const std::string &data, size_t frame_start,
   }
   actual_checksum &= 0xFFFF;
 
-  return actual_checksum == expected_checksum;
+  if (actual_checksum != expected_checksum) {
+    if (verbose) {
+      std::cerr << "Checksum mismatch: calculated 0x" << std::hex << actual_checksum 
+                << ", expected 0x" << expected_checksum << std::dec 
+                << " (frame_len=" << frame_len << ")\n";
+    }
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -405,6 +549,7 @@ void SerialCommandSender::loop_on_read() {
 
   int consecutive_errors = 0;
   constexpr int MAX_CONSECUTIVE_ERRORS = 10;
+  constexpr size_t MAX_ACCUMULATED_SIZE = MAX_BUFFER_SIZE * 2; // Limit accumulated buffer size
 
   try {
     m_streaming = true;
@@ -423,6 +568,16 @@ void SerialCommandSender::loop_on_read() {
         if (current_read > 0) {
           accumulated_data.append(buffer, current_read);
           got_data_this_cycle = true;
+
+          // Prevent buffer overflow - if accumulated data is too large, flush and resync
+          if (accumulated_data.size() > MAX_ACCUMULATED_SIZE) {
+            std::cerr << "WARNING: Buffer overflow (" << accumulated_data.size() 
+                      << " bytes), flushing and resyncing\n";
+            sp_flush(port, SP_BUF_INPUT);
+            accumulated_data.clear();
+            consecutive_errors++;
+            break;
+          }
 
           // Check if we have enough data for a frame
           if (accumulated_data.size() >= minimum_frame_size) {
@@ -506,7 +661,7 @@ void SerialCommandSender::loop_on_read() {
 #endif
 
         // Validate checksum
-        if (!validate_checksum(accumulated_data, header_pos, body_len)) {
+        if (!validate_checksum(accumulated_data, header_pos, body_len, true)) {
           std::cerr << "WARNING: Checksum mismatch, discarding frame\n";
           accumulated_data.erase(0, header_pos + total_frame_len);
           search_start = 0;

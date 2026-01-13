@@ -1,26 +1,22 @@
 #ifndef SERIAL_COMMAND_SENDER_HPP
 #define SERIAL_COMMAND_SENDER_HPP
 
-#include <iostream>
 #include <vector>
 #include <string>
 #include <map>
 #include <cstdint>
 #include <libserialport.h>
 #include <functional> 
-#include <atomic>     
+#include <atomic>
+#include "version.hpp"     
 class SerialCommandSender
 {
 
 public:
-    // Library version information
-    static constexpr int VERSION_MAJOR = 1;
-    static constexpr int VERSION_MINOR = 0;
-    static constexpr int VERSION_PATCH = 0;
-    static constexpr const char* VERSION_STRING = "1.0.0";
-    
     // Method to get version information
-    static std::string get_version();
+    static std::string get_version() {
+        return MI48::get_version();
+    }
     // Define the callback function signature that takes a const reference to the temperature vector
     using FrameCallback = std::function<void(const std::vector<float> &temperatures, const uint16_t rows, const uint16_t cols)>;
 
@@ -34,6 +30,7 @@ public:
 
     bool open_port(const std::string &port_path);
     void close_port();
+    bool initialize_camera(bool verbose = true);
     void send_and_receive_serial_command();
     void loop_on_read();
     void stop_loop();

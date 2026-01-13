@@ -1,9 +1,6 @@
 #include "../serial_mi48.hpp"
 #include <string>
-#include <iomanip>
 #include <numeric>
-#include <thread>
-#include <chrono>
 #include <opencv2/opencv.hpp>
 
 void my_frame_handler(const std::vector<float> &temperatures, const uint16_t rows, const uint16_t cols)
@@ -50,7 +47,7 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
     double avg = sum / total_pixels;
 
     // Add text annotations
-    std::string stats_text = cv::format("Max: %.1f K  Min: %.1f K  Avg: %.1f K", *max_it, *min_it, avg);
+    std::string stats_text = cv::format("Max: %.1f C  Min: %.1f C  Avg: %.1f C", *max_it, *min_it, avg);
     cv::putText(thermal_display_rotated, stats_text, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 1);
 
     // Display the thermal image
@@ -59,12 +56,12 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
 
     // Optional: Keep console output
     std::cout << "\033[2J\033[H";
-    std::cout << "\n--- Frame Statistics (Kelvin) ---\n";
+    std::cout << "\n--- Frame Statistics (C) ---\n";
     std::cout << "MAX Temperature: " << *max_it << "\n";
     std::cout << "MIN Temperature: " << *min_it << "\n";
     std::cout << "AVG Temperature: " << avg << "\n";
 
-    std::cout << "\n--- 1-in-5 Temperature Sample (K) ---\n";
+    std::cout << "\n--- 1-in-5 Temperature Sample (C) ---\n";
     for (uint16_t r = 0; r < rows; r += 5)
     {
         std::cout << "Row " << r << ": ";
@@ -93,16 +90,37 @@ int main(int argc, char *argv[])
     }
 
     SerialCommandSender sender;
-    if (sender.open_port(port_path))
+    if (!sender.open_port(port_path))
     {
-        sender.send_and_receive_serial_command();
-        int camera_type;
-        sender.get_senxor_type(camera_type);
+        std::cerr << "Failed to open port: " << port_path << "\n";
+        return 1;
     }
 
+    // Initialize camera with full MI48 initialization sequence
+    if (!sender.initialize_camera(true))
+    {
+        std::cerr << "Failed to initialize camera\n";
+        sender.close_port();
+        return 1;
+    }
+
+    // Register callback and start streaming
+    std::cout << "=== Starting Stream ===\n";
     sender.register_frame_callback(my_frame_handler);
-    sender.start_stream(true);
+    
+    if (!sender.start_stream(true))
+    {
+        std::cerr << "ERROR: Failed to start stream\n";
+        sender.close_port();
+        return 1;
+    }
+    
+    std::cout << "Stream started successfully. Press Ctrl+C to exit.\n\n";
+    
+    // Main loop
     sender.loop_on_read();
-    cv::destroyAllWindows(); // Clean up OpenCV windows on exit
+    
+    // Cleanup
+    cv::destroyAllWindows();
     return 0;
 }
