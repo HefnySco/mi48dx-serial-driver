@@ -57,9 +57,7 @@ void thermal_frame_handler(const std::vector<float> &temperatures, const uint16_
     cv::Mat frame_normalized;
     frame.convertTo(frame_normalized, CV_8U, 255.0 / (max_temp - min_temp), -min_temp * 255.0 / (max_temp - min_temp));
 
-    // Invert and apply colormap
-    cv::Mat frame_inverted = 255 - frame_normalized;
-    cv::applyColorMap(frame_inverted, g_thermal_frame, cv::COLORMAP_JET);
+    cv::applyColorMap(frame_normalized, g_thermal_frame, cv::COLORMAP_JET);
 
     // Rotate 90 degrees clockwise
     cv::rotate(g_thermal_frame, g_thermal_frame, cv::ROTATE_90_CLOCKWISE);
