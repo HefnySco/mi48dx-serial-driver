@@ -98,10 +98,9 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
     double max_temp_c = max_temp;
     double avg_c = (std::accumulate(temperatures.begin(), temperatures.end(), 0.0) / total_pixels);
 
-    // Scale min/max locations for display
     int scale = 4;
-    cv::Point min_loc_scaled(min_loc.x * scale, min_loc.y * scale);
-    cv::Point max_loc_scaled(max_loc.x * scale, max_loc.y * scale);
+    cv::Point min_loc_scaled((rows -1 - min_loc.y) * scale, (min_loc.x) * scale);
+    cv::Point max_loc_scaled((rows -1 - max_loc.y) * scale, (max_loc.x) * scale);
 
     // Annotate min and max points with "+" and temperature values
     cv::putText(thermal_display_rotated, "+", min_loc_scaled, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
