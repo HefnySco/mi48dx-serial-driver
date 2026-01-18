@@ -26,3 +26,5 @@ raw_display
 dual_camera
 enhanced_display
 multi_palette_display
+
+mi48Config.cmake.in
