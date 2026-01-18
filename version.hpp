@@ -5,7 +5,7 @@
 
 // This will be filled by CMake
 #ifndef __APP__VERSION__
-#define __APP__VERSION__ "1.0.0"
+#define __APP__VERSION__ "2.0.0"
 #endif
 
 namespace MI48 {
