@@ -1,6 +1,8 @@
 #include "../serial_mi48.hpp"
+#include "../thermal_visualization.hpp"
 #include <string>
 #include <numeric>
+#include <iostream>
 #include <opencv2/opencv.hpp>
 
 void my_frame_handler(const std::vector<float> &temperatures, const uint16_t rows, const uint16_t cols)
@@ -9,49 +11,26 @@ void my_frame_handler(const std::vector<float> &temperatures, const uint16_t row
     {
         return;
     }
-    const uint16_t total_pixels = rows * cols;
 
-    // Create a matrix from temperature data
-    cv::Mat frame(rows, cols, CV_32F);
-    for (uint16_t c = 0; c < cols; ++c) {
-        for (uint16_t r = 0; r < rows; ++r) {
-            frame.at<float>(r, c) = temperatures[c * rows + r];
-        }
-    }
-
-    // Normalize temperatures to 0-255 range for display
-    double min_temp, max_temp;
-    cv::minMaxLoc(frame, &min_temp, &max_temp);
-    cv::Mat frame_normalized;
-    frame.convertTo(frame_normalized, CV_8U, 255.0 / (max_temp - min_temp), -min_temp * 255.0 / (max_temp - min_temp));
-
-    // Invert the normalized frame to make hottest points blue and coolest points red
-    cv::Mat frame_inverted = 255 - frame_normalized;
-
-    // Apply OpenCV colormap (e.g., COLORMAP_RAINBOW)
-    cv::Mat thermal_image;
-    cv::applyColorMap(frame_inverted, thermal_image, cv::COLORMAP_RAINBOW);
-
-    // Resize for better visibility (e.g., scale by 4 as in Python code)
-    cv::Mat thermal_display;
-    cv::resize(thermal_image, thermal_display, cv::Size(cols * 4, rows * 4), 0, 0, cv::INTER_NEAREST);
-
-    // Rotate the image 90 degrees clockwise to correct -90 degree rotation
-    cv::Mat thermal_display_rotated;
-    cv::rotate(thermal_display, thermal_display_rotated, cv::ROTATE_90_CLOCKWISE);
+    // Use the new thermal visualization class with RGB palette
+    static ThermalVisualization visualizer;
+    cv::Mat thermal_image = visualizer.visualizeTemperatures(
+        temperatures, rows, cols, ThermalPalette::RAINBOW, -273.15f, 100.0f, 4, true
+    );
 
     // Calculate statistics
     auto min_it = std::min_element(temperatures.begin(), temperatures.end());
     auto max_it = std::max_element(temperatures.begin(), temperatures.end());
     double sum = std::accumulate(temperatures.begin(), temperatures.end(), 0.0);
+    const uint16_t total_pixels = rows * cols;
     double avg = sum / total_pixels;
 
     // Add text annotations
     std::string stats_text = cv::format("Max: %.1f C  Min: %.1f C  Avg: %.1f C", *max_it, *min_it, avg);
-    cv::putText(thermal_display_rotated, stats_text, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 1);
+    cv::putText(thermal_image, stats_text, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 1);
 
     // Display the thermal image
-    cv::imshow("Thermal Image", thermal_display_rotated);
+    cv::imshow("Thermal Image", thermal_image);
     cv::waitKey(1); // Allow OpenCV to process window events
 
     // Optional: Keep console output
