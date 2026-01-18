@@ -19,59 +19,37 @@ This is a C++ alternative to Python [MeridianInnovation PySenxor](https://github
 
 ## Building the Library
 
-### Using Make (Recommended for quick builds)
-```bash
-# Build libraries and examples
-make all
-
-# Build only libraries
-make libraries
-
-# Install libraries system-wide (requires sudo)
-sudo make install
-
-# Clean build files
-make clean
-
-# Show help
-make help
-```
-
-### Using CMake (Recommended for integration)
+### Using CMake
 ```bash
 mkdir build
 cd build
 cmake ..
 make
 
-# Install libraries system-wide
+# Install libraries system-wide (requires sudo)
 sudo make install
 ```
 
+### Using the Build Script (Quick Start)
+```bash
+./build.sh
+```
+
+This creates a debug build in the `build/` directory with all libraries and examples.
+
 ## Library Files Generated
+After building, you'll find in `build/bin/`:
 - `libmi48.a` - Static library
 - `libmi48.so` - Shared library
-- `serial_mi48.hpp` - Header file
+
+Headers are in the project root:
+- `serial_mi48.hpp` - Main camera interface
+- `thermal_visualization.hpp` - Visualization utilities
+- `version.hpp` - Version information
 
 ## Usage in Your Projects
 
-### Method 1: Using pkg-config
-```bash
-# Compile your application
-g++ -std=c++17 your_app.cpp `pkg-config --cflags --libs mi48` -o your_app
-```
-
-### Method 2: Manual linking with Make
-```makefile
-CXX = g++
-CXXFLAGS = -std=c++17 -I/path/to/mi48_lib_c
-LDFLAGS = -L/path/to/mi48_lib_c -lmi48 -lserialport `pkg-config --libs opencv4`
-
-your_app: your_app.o
-	$(CXX) your_app.o -o $@ $(LDFLAGS)
-```
-
-### Method 3: Using CMake
+### Method 1: Using CMake (Recommended)
 ```cmake
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MI48 REQUIRED mi48)
@@ -79,6 +57,12 @@ pkg_check_modules(MI48 REQUIRED mi48)
 add_executable(your_app your_app.cpp)
 target_include_directories(your_app PRIVATE ${MI48_INCLUDE_DIRS})
 target_link_libraries(your_app PRIVATE ${MI48_LIBRARIES})
+```
+
+### Method 2: Using pkg-config (After Installation)
+```bash
+# Compile your application
+g++ -std=c++17 your_app.cpp `pkg-config --cflags --libs mi48` -o your_app
 ```
 
 ## Basic Usage Example
@@ -119,7 +103,10 @@ int main() {
    ```
 2. Build and install:
    ```bash
-   make all
+   mkdir build
+   cd build
+   cmake ..
+   make
    sudo make install
    ```
 
