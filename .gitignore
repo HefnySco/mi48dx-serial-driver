@@ -1,11 +1,28 @@
+# Object files and libraries
 *.o
-serial_mi48
-libmi48.so
-libmi48.a
+*.a
+*.so
+
+# Build directories
+build/
+bin/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+!mi48Config.cmake.in
+
+# pkg-config file
 mi48.pc
-mi48Config.cmake.in
+
+# Example executables
+simple_display
 advanced_display
 raw_display
-simple_display
 dual_camera
-build/
+enhanced_display
+multi_palette_display
