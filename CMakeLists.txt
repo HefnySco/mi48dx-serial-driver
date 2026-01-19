@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(mi48_lib_c VERSION 2.0.0 LANGUAGES CXX)
+project(mi48_lib_c VERSION 2.1.0 LANGUAGES CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -46,7 +46,10 @@ set(LIB_HEADERS
 # Create static library
 if(BUILD_STATIC_LIBS)
     add_library(mi48_static STATIC ${LIB_SOURCES})
-    target_include_directories(mi48_static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(mi48_static PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
+    )
     target_link_libraries(mi48_static ${OPENCV_LIBRARIES} ${SERIALPORT_LIB})
     target_compile_options(mi48_static PUBLIC ${OPENCV_CFLAGS_OTHER})
     set_target_properties(mi48_static PROPERTIES OUTPUT_NAME mi48)
@@ -55,7 +58,10 @@ endif()
 # Create shared library
 if(BUILD_SHARED_LIBS)
     add_library(mi48_shared SHARED ${LIB_SOURCES})
-    target_include_directories(mi48_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(mi48_shared PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
+    )
     target_link_libraries(mi48_shared ${OPENCV_LIBRARIES} ${SERIALPORT_LIB})
     target_compile_options(mi48_shared PUBLIC ${OPENCV_CFLAGS_OTHER})
     set_target_properties(mi48_shared PROPERTIES OUTPUT_NAME mi48)
@@ -112,9 +118,17 @@ endif()
 
 if(INSTALL_TARGETS)
     install(TARGETS ${INSTALL_TARGETS}
+        EXPORT mi48Targets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
+    )
+    
+    # Export targets for find_package
+    install(EXPORT mi48Targets
+        FILE mi48Targets.cmake
+        NAMESPACE mi48::
+        DESTINATION lib/cmake/mi48
     )
 endif()
 

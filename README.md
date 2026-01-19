@@ -19,50 +19,66 @@ This is a C++ alternative to Python [MeridianInnovation PySenxor](https://github
 
 ## Building the Library
 
-### Using CMake
+### Quick Start (Recommended)
+```bash
+# Build the library (creates DEBUG build by default)
+./build.sh
+
+# Or build in RELEASE mode
+./build.sh RELEASE
+
+# Install to $HOME/.local
+./install.sh
+
+# Uninstall if needed
+./uninstall.sh
+```
+
+### Manual Build Using CMake
 ```bash
 mkdir build
 cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=DEBUG -DCMAKE_INSTALL_PREFIX=$HOME/.local ..
 make
-
-# Install libraries system-wide (requires sudo)
-sudo make install
+make install
 ```
-
-### Using the Build Script (Quick Start)
-```bash
-./build.sh
-```
-
-This creates a debug build in the `build/` directory with all libraries and examples.
 
 ## Library Files Generated
+
 After building, you'll find in `build/bin/`:
 - `libmi48.a` - Static library
 - `libmi48.so` - Shared library
 
-Headers are in the project root:
-- `serial_mi48.hpp` - Main camera interface
-- `thermal_visualization.hpp` - Visualization utilities
-- `version.hpp` - Version information
+After installation (default: `$HOME/.local`):
+- **Libraries**: `$HOME/.local/lib/libmi48.{a,so}`
+- **Headers**: `$HOME/.local/include/{serial_mi48.hpp,thermal_visualization.hpp,version.hpp}`
+- **CMake config**: `$HOME/.local/lib/cmake/mi48/`
 
-## Usage in Your Projects
+## Using the Library in Your Projects
 
-### Method 1: Using CMake (Recommended)
+### Method 1: Using CMake find_package (Recommended)
 ```cmake
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(MI48 REQUIRED mi48)
+# Find the installed mi48 library
+find_package(mi48 REQUIRED PATHS $ENV{HOME}/.local/lib/cmake/mi48)
 
 add_executable(your_app your_app.cpp)
-target_include_directories(your_app PRIVATE ${MI48_INCLUDE_DIRS})
-target_link_libraries(your_app PRIVATE ${MI48_LIBRARIES})
+
+# Link against the static library
+target_link_libraries(your_app PRIVATE mi48::mi48_static serialport)
+
+# Or link against the shared library
+# target_link_libraries(your_app PRIVATE mi48::mi48_shared serialport)
 ```
 
-### Method 2: Using pkg-config (After Installation)
+### Method 2: Manual Linking
 ```bash
-# Compile your application
-g++ -std=c++17 your_app.cpp `pkg-config --cflags --libs mi48` -o your_app
+# Compile with static library
+g++ -std=c++17 your_app.cpp \
+    -I$HOME/.local/include \
+    -L$HOME/.local/lib \
+    -lmi48 -lserialport \
+    `pkg-config --cflags --libs opencv4` \
+    -o your_app
 ```
 
 ## Basic Usage Example
@@ -96,19 +112,35 @@ int main() {
 ```
 
 ## Installation
+
+### Quick Installation
 1. Clone the repository:
    ```bash
    git clone https://github.com/HefnySco/mi48dx-serial-driver.git
-   cd mi48dx-serial-driver/mi48_lib_c
+   cd mi48dx-serial-driver
    ```
+
 2. Build and install:
    ```bash
-   mkdir build
-   cd build
-   cmake ..
-   make
-   sudo make install
+   ./build.sh          # Build the library
+   ./install.sh        # Install to $HOME/.local
    ```
+
+### Custom Installation Prefix
+If you want to install to a different location:
+```bash
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=/your/custom/path ..
+make
+make install
+```
+
+### Uninstallation
+To remove the installed library:
+```bash
+./uninstall.sh
+```
 
 ## Examples
 
@@ -124,5 +156,11 @@ The library provides the following main classes and functions:
 - Streaming control functions
 
 ## Library Version
-- Version: 1.0.0
+- Version: 2.0.0
 - Use `SerialCommandSender::get_version()` to get runtime version info.
+
+## Notes
+- The library installs to `$HOME/.local` by default (no sudo required)
+- Make sure `$HOME/.local/lib` is in your library path
+- CMake will automatically find the library if installed to `$HOME/.local`
+- Dependencies: OpenCV 4.x and libserialport must be installed on your system
