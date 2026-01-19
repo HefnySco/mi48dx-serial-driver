@@ -1,5 +1,5 @@
-#ifndef VERSION_H
-#define VERSION_H
+#ifndef MI48_VERSION_H
+#define MI48_VERSION_H
 
 #include <string>
 
@@ -18,4 +18,4 @@ namespace MI48 {
     }
 }
 
-#endif // VERSION_H
+#endif // MI48_VERSION_H
